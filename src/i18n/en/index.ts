@@ -1,0 +1,17 @@
+/*
+ * English: the source of every text and the fallback of every other
+ * language (see src/i18n/index.ts). One file per part of the plugin, so each
+ * part can be translated and checked on its own; every key starts with the
+ * name of its file.
+ */
+import { common } from './common';
+import { editor } from './editor';
+import { build } from './build';
+import { panels } from './panels';
+import { plugin } from './plugin';
+import { problems } from './problems';
+import { help } from './help';
+
+export const EN = { ...common, ...editor, ...build, ...panels, ...plugin, ...problems, ...help };
+
+export type MessageKey = keyof typeof EN;

@@ -11,6 +11,7 @@
  */
 import { THICKNESS_MAP } from './colors';
 import { dollarMath, splitDomain } from './expr';
+import { t } from './i18n';
 import {
     Annotation,
     AnnotationAnchor,
@@ -1437,10 +1438,14 @@ export function defaultTool(type: ToolType, opts: { is3D: boolean; tools: Tool[]
 /** A pre-filled item offered in the Build tab's Add menus. */
 export interface Recipe {
     id: string;
-    /** Menu section: 'Functions', 'Regions', 'Curves and lines', 'Points', 'Segments and arrows', 'Labels', 'Sliders', '3D'. */
+    /**
+     * Menu section: 'Functions', 'Regions', 'Curves and lines', 'Points', 'Segments and arrows', 'Labels', 'Sliders', '3D'.
+     * An identifier: the Build tab shows each section under a heading in the reader's language.
+     */
     section: string;
+    /** Menu text, in the reader's language (recipes() is called when a menu opens). */
     label: string;
-    /** One-line hint shown in tooltips / empty states. */
+    /** One-line hint shown in tooltips / empty states, in the reader's language. */
     hint: string;
     /** Only offered when this is true for the current chart. */
     available(ctx: RecipeContext): boolean;
@@ -1516,8 +1521,8 @@ function sliderRecipe(available: (ctx: RecipeContext) => boolean): Recipe {
     return {
         id: 'slider',
         section: 'Sliders',
-        label: 'Slider',
-        hint: 'A named number you can drag and use in any formula, range or label.',
+        label: t('build.recipe.slider'),
+        hint: t('build.recipeHint.slider'),
         available,
         build: (ctx) => ({ kind: 'parameter', parameter: defaultParameter(chartNames(ctx)) }),
     };
@@ -1527,8 +1532,8 @@ function labelRecipe(available: (ctx: RecipeContext) => boolean): Recipe {
     return {
         id: 'label',
         section: 'Labels',
-        label: 'Text label',
-        hint: 'Text at a point. Use $...$ for math and {a} to show a value.',
+        label: t('build.recipe.label'),
+        hint: t('build.recipeHint.label'),
         available,
         build: () => ({ kind: 'label' }),
     };
@@ -1540,16 +1545,16 @@ function recipes2D(): Recipe[] {
         {
             id: 'function',
             section: 'Functions',
-            label: 'Function y = f(x)',
-            hint: 'A curve given by a formula in x, such as x^2 - 2x.',
+            label: t('build.recipe.function'),
+            hint: t('build.recipeHint.function'),
             available: in2D,
             build: (ctx) => ({ kind: 'function', fn: defaultFunction(chartNames(ctx), nextFunctionColor(ctx.functions)) }),
         },
         {
             id: 'parametric',
             section: 'Functions',
-            label: 'Parametric curve x(t), y(t)',
-            hint: 'A curve traced by x(t) and y(t), such as an ellipse or a spiral.',
+            label: t('build.recipe.parametric'),
+            hint: t('build.recipeHint.parametric'),
             available: in2D,
             build: (ctx) => ({
                 kind: 'function',
@@ -1565,8 +1570,8 @@ function recipes2D(): Recipe[] {
         {
             id: 'area-between',
             section: 'Regions',
-            label: 'Area between two functions',
-            hint: 'Shades where the second function lies below the first (f2 <= y <= f1).',
+            label: t('build.recipe.areaBetween'),
+            hint: t('build.recipeHint.areaBetween'),
             available: in2D,
             build: (ctx) => {
                 const [f, g] = callableFunctions(ctx);
@@ -1580,8 +1585,8 @@ function recipes2D(): Recipe[] {
         {
             id: 'area-under',
             section: 'Regions',
-            label: 'Area under a function',
-            hint: 'Shades between a function and the x-axis over an interval.',
+            label: t('build.recipe.areaUnder'),
+            hint: t('build.recipeHint.areaUnder'),
             available: in2D,
             build: (ctx) => {
                 const f = callableFunctions(ctx)[0] || '(2 + sin(x))';
@@ -1591,80 +1596,80 @@ function recipes2D(): Recipe[] {
         {
             id: 'feasible-region',
             section: 'Regions',
-            label: 'Feasible region (inequalities)',
-            hint: 'Shades where every inequality holds, such as x + y <= 4. Add one per row.',
+            label: t('build.recipe.feasibleRegion'),
+            hint: t('build.recipeHint.feasibleRegion'),
             available: in2D,
             build: (ctx) => regionRecipe(ctx, { conditions: ['x >= 0', 'y >= 0', ''], constraintLines: true }),
         },
         {
             id: 'rectangle',
             section: 'Regions',
-            label: 'Rectangle',
-            hint: 'A box a <= x <= b, c <= y <= d.',
+            label: t('build.recipe.rectangle'),
+            hint: t('build.recipeHint.rectangle'),
             available: in2D,
             build: (ctx) => regionRecipe(ctx, { conditions: ['1 <= x <= 4', '1 <= y <= 3'], outline: 'solid' }),
         },
         {
             id: 'disk',
             section: 'Regions',
-            label: 'Disk',
-            hint: 'The inside of a circle with centre (a, b) and radius r.',
+            label: t('build.recipe.disk'),
+            hint: t('build.recipeHint.disk'),
             available: in2D,
             build: (ctx) => regionRecipe(ctx, { conditions: ['(x - 3)^2 + (y - 2)^2 <= 2^2'], outline: 'solid' }),
         },
         {
             id: 'vertical-line',
             section: 'Curves and lines',
-            label: 'Vertical line x = c',
-            hint: 'A straight line at a fixed x value.',
+            label: t('build.recipe.verticalLine'),
+            hint: t('build.recipeHint.verticalLine'),
             available: in2D,
             build: (ctx) => curveRecipe(ctx, { equation: 'x = 2', dashed: true, color: 'gray' }),
         },
         {
             id: 'horizontal-line',
             section: 'Curves and lines',
-            label: 'Horizontal line y = c',
-            hint: 'A straight line at a fixed y value.',
+            label: t('build.recipe.horizontalLine'),
+            hint: t('build.recipeHint.horizontalLine'),
             available: in2D,
             build: (ctx) => curveRecipe(ctx, { equation: 'y = 2', dashed: true, color: 'gray' }),
         },
         {
             id: 'line-equation',
             section: 'Curves and lines',
-            label: 'Line from an equation',
-            hint: 'Any straight line written as an equation, such as 2x + 3y = 12.',
+            label: t('build.recipe.lineEquation'),
+            hint: t('build.recipeHint.lineEquation'),
             available: in2D,
             build: (ctx) => curveRecipe(ctx, { equation: '2x + 3y = 12' }),
         },
         {
             id: 'circle',
             section: 'Curves and lines',
-            label: 'Circle',
-            hint: 'The outline of a circle (x - a)^2 + (y - b)^2 = r^2.',
+            label: t('build.recipe.circle'),
+            hint: t('build.recipeHint.circle'),
             available: in2D,
             build: (ctx) => curveRecipe(ctx, { equation: '(x - 3)^2 + (y - 2)^2 = 2^2' }),
         },
         {
             id: 'level-curves',
             section: 'Curves and lines',
-            label: 'Level curves of F(x, y)',
-            hint: 'Curves where F(x, y) takes each listed value, such as indifference curves.',
+            label: t('build.recipe.levelCurves'),
+            hint: t('build.recipeHint.levelCurves'),
             available: in2D,
             build: (ctx) => curveRecipe(ctx, { equation: 'x*y', levels: '2, 4, 8', label: '{level}', color: 'purple' }),
         },
         {
             id: 'points-list',
             section: 'Points',
-            label: 'Points from a list',
-            hint: 'Marks the points you type, such as (1, 2); (3, 4).',
+            label: t('build.recipe.pointsList'),
+            hint: t('build.recipeHint.pointsList'),
             available: in2D,
             build: (ctx) => pointsRecipe(ctx, { points: '(1, 1); (2, 3); (4, 2)' }),
         },
         {
             id: 'intersections',
             section: 'Points',
-            label: 'Intersections of two functions',
-            hint: 'Marks where two functions or curves cross.',
+            label: t('build.recipe.intersections'),
+            hint: t('build.recipeHint.intersections'),
             available: in2D,
             build: (ctx) => {
                 const refs = [...callableFunctions(ctx), ...ctx.tools.filter((t) => t.type === 'curve').map((t) => t.name)];
@@ -1679,16 +1684,16 @@ function recipes2D(): Recipe[] {
         {
             id: 'corner-points',
             section: 'Points',
-            label: 'Corner points of a region',
-            hint: 'Marks the corners of a shaded region with their coordinates.',
+            label: t('build.recipe.cornerPoints'),
+            hint: t('build.recipeHint.cornerPoints'),
             available: in2D,
             build: (ctx) => pointsRecipe(ctx, { source: 'region', regionName: firstRegion(ctx), label: '({x}, {y})' }),
         },
         {
             id: 'optimum',
             section: 'Points',
-            label: 'Optimum over a region',
-            hint: 'Finds where an objective such as 2x + 3y is largest (or smallest) in a region.',
+            label: t('build.recipe.optimum'),
+            hint: t('build.recipeHint.optimum'),
             available: in2D,
             build: (ctx) =>
                 pointsRecipe(ctx, {
@@ -1703,40 +1708,40 @@ function recipes2D(): Recipe[] {
         {
             id: 'lattice',
             section: 'Points',
-            label: 'Integer points in a region',
-            hint: 'Marks every point with whole-number coordinates inside a region (or the whole view).',
+            label: t('build.recipe.lattice'),
+            hint: t('build.recipeHint.lattice'),
             available: in2D,
             build: (ctx) => pointsRecipe(ctx, { source: 'lattice', regionName: firstRegion(ctx), size: 'small' }),
         },
         {
             id: 'segment',
             section: 'Segments and arrows',
-            label: 'Line segment',
-            hint: 'A straight segment between two points.',
+            label: t('build.recipe.segment'),
+            hint: t('build.recipeHint.segment'),
             available: in2D,
             build: (ctx) => segmentRecipe(ctx, { path: '(1, 1); (4, 3)' }),
         },
         {
             id: 'arrow',
             section: 'Segments and arrows',
-            label: 'Arrow',
-            hint: 'A segment with an arrow head, such as a vector or a gradient.',
+            label: t('build.recipe.arrow'),
+            hint: t('build.recipeHint.arrow'),
             available: in2D,
             build: (ctx) => segmentRecipe(ctx, { path: '(1, 1); (3, 3)', style: 'forward' }),
         },
         {
             id: 'polyline',
             section: 'Segments and arrows',
-            label: 'Polyline or polygon',
-            hint: 'Connects several points in order; Closed joins the last point back to the first.',
+            label: t('build.recipe.polyline'),
+            hint: t('build.recipeHint.polyline'),
             available: in2D,
             build: (ctx) => segmentRecipe(ctx, { path: '(1, 1); (4, 1); (3, 3)', closed: true }),
         },
         {
             id: 'brace',
             section: 'Segments and arrows',
-            label: 'Brace with label',
-            hint: 'A curly brace between two points; it bulges to the left of the direction from the first point.',
+            label: t('build.recipe.brace'),
+            hint: t('build.recipeHint.brace'),
             available: in2D,
             build: (ctx) => segmentRecipe(ctx, { path: '(1, 1); (4, 1)', style: 'brace', label: 'width' }),
         },
@@ -1751,8 +1756,8 @@ function recipes3D(): Recipe[] {
         {
             id: 'surface',
             section: 'Functions',
-            label: 'Surface z = f(x, y)',
-            hint: 'A surface given by a formula in x and y, such as x^2 - y^2.',
+            label: t('build.recipe.surface'),
+            hint: t('build.recipeHint.surface'),
             available: in3D,
             build: (ctx) => ({
                 kind: 'function',
@@ -1771,32 +1776,32 @@ function recipes3D(): Recipe[] {
         {
             id: 'plane',
             section: '3D',
-            label: 'Plane',
-            hint: 'A flat plane where x, y or z is constant.',
+            label: t('build.recipe.plane'),
+            hint: t('build.recipeHint.plane'),
             available: in3D,
             build: (ctx) => ({ kind: 'tool', tool: newPlane(toolOpts(ctx)) }),
         },
         {
             id: 'point',
             section: '3D',
-            label: 'Point',
-            hint: 'Marks a point (x, y, z).',
+            label: t('build.recipe.point'),
+            hint: t('build.recipeHint.point'),
             available: in3D,
             build: (ctx) => pointsRecipe(ctx, { dim: 3, points: '(1, 1, 1)' }),
         },
         {
             id: 'segment',
             section: '3D',
-            label: 'Segment',
-            hint: 'A straight segment between two points in space.',
+            label: t('build.recipe.segment3D'),
+            hint: t('build.recipeHint.segment3D'),
             available: in3D,
             build: (ctx) => segmentRecipe(ctx, { dim: 3, path: '(0, 0, 0); (1, 1, 1)' }),
         },
         {
             id: 'arrow',
             section: '3D',
-            label: 'Arrow',
-            hint: 'A segment with an arrow head, such as a vector.',
+            label: t('build.recipe.arrow'),
+            hint: t('build.recipeHint.arrow3D'),
             available: in3D,
             build: (ctx) => segmentRecipe(ctx, { dim: 3, path: '(0, 0, 0); (1, 1, 1)', style: 'forward' }),
         },
@@ -1831,6 +1836,7 @@ export function recipes(is3D: boolean): Recipe[] {
 /** Whole-chart starter example (data is a v4 settings object accepted by SettingsManager.fromJSON). */
 export interface ChartExample {
     id: string;
+    /** Title and description in the reader's language, read when shown; the chart in `data` stays English. */
     title: string;
     description: string;
     is3D: boolean;
@@ -1931,8 +1937,12 @@ function exPoints(id: string, name: string, fields: Partial<PointsBody>): Points
 export const EXAMPLES: ChartExample[] = [
     {
         id: 'lp',
-        title: 'Linear program',
-        description: 'Feasible region, objective line 2x + 3y = c and the optimum. Drag a line to change it.',
+        get title() {
+            return t('build.example.lpTitle');
+        },
+        get description() {
+            return t('build.example.lpDescription');
+        },
         is3D: false,
         data: exampleChart({
             xmin: '0',
@@ -1967,8 +1977,12 @@ export const EXAMPLES: ChartExample[] = [
     },
     {
         id: 'areas',
-        title: 'Areas between two curves',
-        description: 'sin and cos with the areas between them shaded in two colours.',
+        get title() {
+            return t('build.example.areasTitle');
+        },
+        get description() {
+            return t('build.example.areasDescription');
+        },
         is3D: false,
         data: exampleChart({
             xmin: '-0.5',
@@ -1991,8 +2005,12 @@ export const EXAMPLES: ChartExample[] = [
     },
     {
         id: 'tangent',
-        title: 'Tangent explorer',
-        description: 'Drag the tangent point, or the slider a, to slide the tangent along x^3 - 3x.',
+        get title() {
+            return t('build.example.tangentTitle');
+        },
+        get description() {
+            return t('build.example.tangentDescription');
+        },
         is3D: false,
         data: exampleChart({
             title: 'slope at x = {a}: {3a^2 - 3:2}',
@@ -2015,8 +2033,12 @@ export const EXAMPLES: ChartExample[] = [
     },
     {
         id: 'levels',
-        title: 'Level curves and a constraint',
-        description: 'Minimise x^2 + y^2 subject to x + 2y >= 4: the optimal level curve touches the region. Drag the curves to explore.',
+        get title() {
+            return t('build.example.levelsTitle');
+        },
+        get description() {
+            return t('build.example.levelsDescription');
+        },
         is3D: false,
         data: exampleChart({
             xmin: '-0.5',
@@ -2049,8 +2071,12 @@ export const EXAMPLES: ChartExample[] = [
     },
     {
         id: 'surplus',
-        title: 'Market equilibrium',
-        description: 'Demand, supply, and the consumer and producer surplus at the equilibrium. Drag the curves to explore.',
+        get title() {
+            return t('build.example.surplusTitle');
+        },
+        get description() {
+            return t('build.example.surplusDescription');
+        },
         is3D: false,
         data: exampleChart({
             xmin: '0',
@@ -2074,8 +2100,12 @@ export const EXAMPLES: ChartExample[] = [
     },
     {
         id: 'plane3d',
-        title: 'Surface and plane',
-        description: 'The paraboloid x^2 + y^2 cut by the plane z = h; drag h.',
+        get title() {
+            return t('build.example.plane3dTitle');
+        },
+        get description() {
+            return t('build.example.plane3dDescription');
+        },
         is3D: true,
         data: exampleChart({
             dimension: true,

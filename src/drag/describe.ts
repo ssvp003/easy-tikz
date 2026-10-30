@@ -1,32 +1,105 @@
 /*
  * Every user-facing string of drag to edit (SPEC3 1.8, 1.11): hover, lock,
- * live and tip chips, undo bar labels, announcements. Pure: no DOM, no
- * Obsidian. The session and the modal build data; only this file words it.
+ * live and tip chips, undo bar labels, announcements, and the names of the
+ * parts a drag grabs ('R1 condition 2', 'Label 1'). Pure: no DOM, no
+ * Obsidian. The session and the modal build data; only this file words it,
+ * in the reader's language (src/i18n, keys 'editor.*').
  */
 import { formatFixed, formatNumber } from '../expr';
+import { format, language, t, tIn } from '../i18n';
+import type { MessageKey, MessageValues } from '../i18n';
 import type { Chip, ChipPart, DragNumber, DragTarget, Gesture, HitShape, Lock, Restriction, VirtualKind } from './types';
+
+// ------------------------------------------------------------- language
+
+/** Japanese characters and full-width punctuation: no space stands between two of them. */
+const WIDE = /[\u3000-\u303f\u3040-\u30ff\u4e00-\u9fff\uff00-\uffef]/;
+const PLACE_THEN_WIDE = /\{(\w+)\} (?=[\u3000-\u303f\u3040-\u30ff\u4e00-\u9fff\uff00-\uffef])/g;
+const WIDE_THEN_PLACE = /([\u3000-\u303f\u3040-\u30ff\u4e00-\u9fff\uff00-\uffef]) \{(\w+)\}/g;
+
+/**
+ * t() for the texts of this file. A name put into a text may itself end or
+ * start in Japanese ('f1 の接線', 'P1 の目的関数'): the template's space
+ * between it and a Japanese word goes then ('f1 の接線を移動', not
+ * 'f1 の接線 を移動'). English texts are exactly t()'s.
+ */
+function say(key: MessageKey, values?: MessageValues): string {
+    const lang = language();
+    if (!values || lang === 'en') return t(key, values);
+    const wide = (ch: string | undefined) => !!ch && WIDE.test(ch);
+    const value = (name: string): string => (Object.prototype.hasOwnProperty.call(values, name) ? String(values[name]) : '');
+    const message = tIn(lang, key)
+        .replace(PLACE_THEN_WIDE, (whole, name: string) => (wide(value(name).slice(-1)) ? `{${name}}` : whole))
+        .replace(WIDE_THEN_PLACE, (whole, before: string, name: string) => (wide(value(name).charAt(0)) ? `${before}{${name}}` : whole));
+    return format(message, values);
+}
 
 // ------------------------------------------------------------- constants
 
-/** Help and tooltip copy of the core rule (SPEC3 1.1). */
-export const CORE_RULE =
-    'Drag a line, curve, point or label: its numbers change so the part you grabbed follows the pointer. Shift-drag turns lines and stretches curves around ⊕.';
+/** Help and tooltip copy of the core rule (SPEC3 1.1), in English (read by the tests); coreRule() is in the reader's language. */
+export const CORE_RULE = tIn('en', 'editor.drag.coreRule');
 
-/** aria-label of the chart preview while dragging is on (SPEC3 1.8). */
-export const CHART_LABEL =
-    'Chart preview. Drag lines, curves, points and labels to change their numbers; Shift-drag turns or stretches. Drag empty space to pan, scroll to zoom.';
+/** aria-label of the chart preview while dragging is on (SPEC3 1.8), in English; chartLabel() is in the reader's language. */
+export const CHART_LABEL = tIn('en', 'editor.drag.chartLabel');
+
+export function coreRule(): string {
+    return say('editor.drag.coreRule');
+}
+
+export function chartLabel(): string {
+    return say('editor.drag.chartLabel');
+}
 
 /** Pill toggle label (SPEC3 1.12). */
-export const TOGGLE_LABEL = 'Edit shapes by dragging';
+export function toggleLabel(): string {
+    return say('editor.drag.toggle');
+}
 
 /** Undo bar buttons. */
-export const UNDO_BUTTON = 'Undo';
-export const MAKE_SLIDER_BUTTON = 'Make slider';
+export function undoButton(): string {
+    return t('common.undo');
+}
+
+export function makeSliderButton(): string {
+    return say('editor.undo.makeSlider');
+}
 
 /** Longest chip text (characters) before it is cut around the first highlighted part. */
 const MAX_TEXT = 48;
 const ELLIPSIS = '…';
 const MAX_NAMES = 3;
+
+// ----------------------------------------------------------------- names
+
+/** 'Label 2' for the label at `index` (counted from 0, shown from 1). */
+export function labelName(index: number): string {
+    return say('editor.drag.label', { n: index + 1 });
+}
+
+/** 'f1 tangent'. */
+export function tangentName(fn: string): string {
+    return say('editor.drag.tangent', { name: fn });
+}
+
+/** 'R1 condition 2' for condition `entry` (counted from 0) of region `name`. */
+export function conditionName(name: string, entry: number): string {
+    return say('editor.drag.condition', { name, n: entry + 1 });
+}
+
+/** 'C1 level 3.2' (a level's value, or its number when it has none). */
+export function levelName(name: string, level: string | number): string {
+    return say('editor.drag.level', { name, level });
+}
+
+/** 'P1 point 2' for point `index` (counted from 0) of `name`. */
+export function pointName(name: string, index: number): string {
+    return say('editor.drag.point', { name, n: index + 1 });
+}
+
+/** "P1's objective": a points tool's objective that changes with a curve. */
+export function objectiveName(name: string): string {
+    return say('editor.drag.objective', { name });
+}
 
 // ----------------------------------------------------------------- locks
 
@@ -48,69 +121,76 @@ export type LockReason =
 
 export function lockFor(reason: LockReason): Lock {
     switch (reason.kind) {
-        case 'optimum':
+        case 'optimum': {
+            const { point, objective, region } = reason;
             return {
-                title: `${reason.point} is computed: the ${reason.sense} of ${reason.objective} over ${reason.region}`,
-                detail: reason.twinCurve
-                    ? `Drag ${reason.region}'s lines or ${reason.twinCurve} instead`
-                    : `Drag ${reason.region}'s lines instead`,
+                title: say(reason.sense === 'min' ? 'editor.lock.optimumMin' : 'editor.lock.optimumMax', { point, objective, region }),
+                detail: reason.twinCurve ? say('editor.lock.dragLinesOr', { region, curve: reason.twinCurve }) : say('editor.lock.dragLines', { region }),
             };
+        }
         case 'intersection':
-            return { title: `${reason.point} is computed: where ${reason.a} meets ${reason.b}`, detail: `Drag ${reason.a} or ${reason.b} instead` };
+            return {
+                title: say('editor.lock.intersection', { point: reason.point, a: reason.a, b: reason.b }),
+                detail: say('editor.lock.dragEither', { a: reason.a, b: reason.b }),
+            };
         case 'corner':
-            return { title: `${reason.point} is computed: the corners of ${reason.region}`, detail: `Drag ${reason.region}'s lines instead` };
+            return { title: say('editor.lock.corner', { point: reason.point, region: reason.region }), detail: say('editor.lock.dragLines', { region: reason.region }) };
         case 'lattice':
             return reason.region
-                ? { title: `${reason.point} is computed: the integer points of ${reason.region}`, detail: `Drag ${reason.region}'s lines instead` }
-                : { title: `${reason.point} is computed: the integer points of the view`, detail: 'Pan or zoom the view instead' };
+                ? { title: say('editor.lock.lattice', { point: reason.point, region: reason.region }), detail: say('editor.lock.dragLines', { region: reason.region }) }
+                : { title: say('editor.lock.latticeView', { point: reason.point }), detail: say('editor.lock.panOrZoom') };
         case 'derivedClause':
-            return { title: `This edge of ${reason.region} follows ${reason.name}`, detail: `${reason.tool} computes it` };
+            return { title: say('editor.lock.derivedClause', { region: reason.region, name: reason.name }), detail: say('editor.lock.computedBy', { tool: reason.tool }) };
         case 'derivedLevel':
-            return { title: `${reason.curve}'s level is ${reason.name}`, detail: `${reason.tool} computes it. Shift-drag reshapes the curve` };
+            return { title: say('editor.lock.derivedLevel', { curve: reason.curve, name: reason.name }), detail: say('editor.lock.derivedLevelDetail', { tool: reason.tool }) };
         case 'keywordTangent':
             return {
-                title: `The tangent of ${reason.fn} sits at its ${reason.keyword}`,
-                detail: 'Type a number or a slider in Tangent at to drag it',
+                title: say('editor.lock.keywordTangent', { fn: reason.fn, keyword: reason.keyword }),
+                detail: say('editor.lock.keywordTangentDetail'),
             };
         case 'derivedTangent':
-            return { title: `The tangent of ${reason.fn} follows ${reason.name}`, detail: `${reason.tool} computes it` };
+            return { title: say('editor.lock.derivedTangent', { fn: reason.fn, name: reason.name }), detail: say('editor.lock.computedBy', { tool: reason.tool }) };
         case 'splicedVertex':
             return {
-                title: `${reason.segment} point ${reason.index} comes from ${reason.from}`,
-                detail: reason.fromIsList ? `Drag it in ${reason.from} instead` : `${reason.from} computes it`,
+                title: say('editor.lock.splicedVertex', { segment: reason.segment, index: reason.index, from: reason.from }),
+                detail: reason.fromIsList ? say('editor.lock.dragInSource', { from: reason.from }) : say('editor.lock.computedBy', { tool: reason.from }),
             };
         case 'splicedPath':
-            return { title: `${reason.segment} follows ${reason.from}'s points`, detail: 'Drag its own points instead' };
+            return { title: say('editor.lock.splicedPath', { segment: reason.segment, from: reason.from }), detail: say('editor.lock.dragOwnPoints') };
         case 'curveKind':
             return {
-                title: `${reason.fn} is ${reason.fnKind}`,
-                detail: 'Dragging works for y = f(x) curves, regions, curves, points, segments and labels',
+                title: say(reason.fnKind === 'polar' ? 'editor.lock.polar' : 'editor.lock.parametric', { fn: reason.fn }),
+                detail: say('editor.lock.dragWorksFor'),
             };
         case 'nothing':
-            return { title: `Nothing in ${reason.subject} can change by dragging`, detail: 'Its text has no numbers or sliders' };
+            return { title: say('editor.lock.nothing', { subject: reason.subject }), detail: say('editor.lock.noNumbers') };
         case 'axisSlider':
-            return { title: `${reason.name} also sets the axis range`, detail: 'Dragging leaves it alone. Change it in the dock' };
+            return { title: say('editor.lock.axisSlider', { name: reason.name }), detail: say('editor.lock.axisSliderDetail') };
         case 'cannotDragHere':
-            return { title: `${reason.subject} cannot be dragged here`, detail: 'Grab it where it is drawn' };
+            return { title: say('editor.lock.cannotDragHere', { subject: reason.subject }), detail: say('editor.lock.grabWhereDrawn') };
     }
 }
 
 /** Shift is unavailable for this target (SPEC3 1.8 "Shift unavailable"). `noTerm`: clause text and the missing variable. */
-export function shiftLockFor(t: DragTarget, noTerm: { text: string; variable: string } | null): Lock {
-    const verb = t.shift === 'stretch' ? 'stretch' : t.shift === 'resize' ? 'resize' : 'turn';
-    if (noTerm && verb === 'turn') {
-        return { title: `Shift-drag cannot turn ${noTerm.text}: it has no ${noTerm.variable} term`, detail: 'Drag without Shift to move it' };
+export function shiftLockFor(target: DragTarget, noTerm: { text: string; variable: string } | null): Lock {
+    const detail = say('editor.lock.dragWithoutShift');
+    const turns = target.shift !== 'stretch' && target.shift !== 'resize';
+    if (noTerm && turns) {
+        return { title: say('editor.lock.shiftNoTerm', { text: noTerm.text, variable: noTerm.variable }), detail };
     }
-    return { title: `Shift-drag cannot ${verb} ${t.subject} with its numbers`, detail: 'Drag without Shift to move it' };
+    const key: MessageKey = target.shift === 'stretch' ? 'editor.lock.shiftCannotStretch' : target.shift === 'resize' ? 'editor.lock.shiftCannotResize' : 'editor.lock.shiftCannotTurn';
+    return { title: say(key, { subject: target.subject }), detail };
 }
 
 /**
  * Shift is unavailable at this grab only: the numbers could change the shape, but no pivot candidate is far
  * enough from the grab (every one within the dead zone, out of view, or level with it along the stretched axis).
  */
-export function noPivotLockFor(t: DragTarget): Lock {
-    const verb = t.shift === 'stretch' ? 'stretch' : t.shift === 'resize' ? 'resize' : 'turn';
-    return { title: `Shift-drag has no ⊕ to ${verb} ${t.subject} from this point`, detail: `Grab it elsewhere to ${verb} it, or drag without Shift to move it` };
+export function noPivotLockFor(target: DragTarget): Lock {
+    const subject = target.subject;
+    if (target.shift === 'stretch') return { title: say('editor.lock.noPivotStretch', { subject }), detail: say('editor.lock.noPivotStretchDetail') };
+    if (target.shift === 'resize') return { title: say('editor.lock.noPivotResize', { subject }), detail: say('editor.lock.noPivotResizeDetail') };
+    return { title: say('editor.lock.noPivotTurn', { subject }), detail: say('editor.lock.noPivotTurnDetail') };
 }
 
 // ----------------------------------------------------------------- chips
@@ -152,10 +232,10 @@ export function virtualLabel(kind: VirtualKind): string {
 
 export function hoverChip(info: HoverInfo, keys: { mod: 'Cmd' | 'Ctrl'; alt: 'Option' | 'Alt' }): Chip {
     void keys;
-    const t = info.target;
+    const target = info.target;
     const parts = textParts(info.text, info.numSpans.map(([s, e]) => ({ s, e, kind: 'num' as const })), info.ghosts);
     return {
-        title: [{ text: `${t.subject}: `, kind: 'plain' }, ...truncate(parts)],
+        title: titled(target.subject, truncate(parts)),
         detail: hoverDetail(info),
         note: hoverNote(info),
         tone: 'normal',
@@ -186,7 +266,7 @@ export type LiveStatus =
     | 'origin';
 
 export function liveChip(
-    t: DragTarget,
+    target: DragTarget,
     fields: Array<{ text: string; changed: Array<[number, number]> }>,
     sliders: Array<{ name: string; value: number }>,
     status: { kind: LiveStatus; label?: string; pivot?: { x: number; y: number }; bound?: number }
@@ -199,19 +279,18 @@ export function liveChip(
         for (const [s, e] of f.changed) if (e > s) spans.push({ s: off + s, e: off + e, kind: 'changed' });
         text += f.text;
     });
-    const parts = truncate(textParts(text, spans, []));
-    const title: ChipPart[] = [{ text: `${t.subject}: `, kind: 'plain' }, ...parts];
+    const title = titled(target.subject, truncate(textParts(text, spans, [])));
     for (const s of sliders) {
         title.push({ text: '   ', kind: 'plain' });
         title.push({ text: `${s.name} = ${formatNumber(s.value)}`, kind: 'changed' });
     }
-    return { title, detail: liveDetail(t, status), note: '', tone: 'normal' };
+    return { title, detail: liveDetail(target, status), note: '', tone: 'normal' };
 }
 
 export function tipChip(keys: { mod: 'Cmd' | 'Ctrl' }): Chip {
     return {
-        title: [{ text: 'Tip: drag lines and curves to change their numbers', kind: 'plain' }],
-        detail: `Shift-drag turns or stretches. ${keys.mod}+Z undoes.`,
+        title: [{ text: say('editor.tip.title'), kind: 'plain' }],
+        detail: say('editor.tip.detail', { mod: keys.mod }),
         note: '',
         tone: 'tip',
     };
@@ -219,47 +298,46 @@ export function tipChip(keys: { mod: 'Cmd' | 'Ctrl' }): Chip {
 
 // ----------------------------------------------------------- undo, a11y
 
-export function undoLabel(t: DragTarget, gesture: Gesture, twin: boolean): string {
-    let text: string;
-    if (gesture === 'move' && t.kind === 'level') {
-        const unit = t.units.find((u) => u.role === 'levelItem');
-        text = `Changed ${t.cardSource} level ${unit && unit.item !== undefined ? unit.item + 1 : 1}`;
-    } else {
-        // Shift on a level reshapes the whole curve: the curve's own name.
-        const subject = t.kind === 'level' ? t.cardSource : t.subject;
-        text = `${verbFor(t, gesture)} ${subject}`;
-    }
-    if (twin) {
-        const names = t.twinNames && t.twinNames.length ? t.twinNames : null;
-        if (names) text += ` and ${joinNames(names.map((n) => `${n}'s objective`))}`;
-    }
-    return text;
+export function undoLabel(target: DragTarget, gesture: Gesture, twin: boolean): string {
+    const { key, subject } = undoParts(target, gesture, twin);
+    return say(key, { subject });
+}
+
+/** What undoLabel names ('R1 (2)', 'C1 level 2', "C1 and P1's objective"): the stale texts name it too. */
+export function undoSubject(target: DragTarget, gesture: Gesture, twin: boolean): string {
+    return undoParts(target, gesture, twin).subject;
 }
 
 /** Announcement when a target gets selected (SPEC3 1.8). */
-export function selectAnnouncement(t: DragTarget, text: string): string {
-    return `${t.subject} selected: ${text}. Arrow keys move it, Enter edits the text, Escape clears the selection.`;
+export function selectAnnouncement(target: DragTarget, text: string): string {
+    return say('editor.announce.select', { subject: target.subject, text });
 }
 
 /** Announcement after a drag: 'R1 (2): x + 3y <= 6.6'. */
-export function dragAnnouncement(t: DragTarget, text: string): string {
-    return `${t.subject}: ${text}`;
+export function dragAnnouncement(target: DragTarget, text: string): string {
+    return say('editor.drag.subjectText', { subject: target.subject, text });
 }
 
 /**
- * Undo bar text after an undo or redo that skipped edited fields: null when
- * nothing was skipped. `names` are the patches that no longer held their value.
+ * Undo bar text after an undo (or, with `redo`, a redo) that skipped edited
+ * fields: null when nothing was skipped. `names` are the patches that no
+ * longer held their value; `applied` tells whether anything else was restored.
  */
-export function staleText(names: readonly string[], applied: boolean): string | null {
+export function staleText(names: readonly string[], applied: boolean, redo = false): string | null {
     if (!names.length) return null;
-    const list = joinNames(names);
-    if (!applied) return `Nothing undone: ${list} ${names.length > 1 ? 'were' : 'was'} edited since`;
-    return `Undone, except ${list}, which ${names.length > 1 ? 'were' : 'was'} edited since`;
+    const values = { count: names.length, names: joinNames(names) };
+    if (redo) return say(applied ? 'editor.undo.redoneExcept' : 'editor.undo.nothingRedone', values);
+    return say(applied ? 'editor.undo.undoneExcept' : 'editor.undo.nothingUndone', values);
 }
 
 /** Undo bar text after Make slider. */
 export function madeSliderText(name: string, value: number): string {
-    return `Made slider ${name} from ${formatNumber(value)}`;
+    return say('editor.undo.madeSlider', { name, value: formatNumber(value) });
+}
+
+/** What an undo of Make slider that changed nothing names as edited since ('slider b from 6.6'). */
+export function madeSliderSubject(name: string, value: number): string {
+    return say('editor.undo.madeSliderSubject', { name, value: formatNumber(value) });
 }
 
 /** Points print with fmtNum-style 3 decimals at most: '(3, 1)', '(1.5, -1.25)'. */
@@ -270,9 +348,8 @@ export function pointText(p: { x: number; y: number }): string {
 /** 'R1', 'R1 and Label 1', 'A, B and C', 'A, B, C and 2 more'. */
 export function joinNames(names: readonly string[]): string {
     const list = names.filter((n, i) => names.indexOf(n) === i);
-    if (list.length <= 1) return list.join('');
-    if (list.length <= MAX_NAMES) return `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
-    return `${list.slice(0, MAX_NAMES).join(', ')} and ${list.length - MAX_NAMES} more`;
+    if (list.length <= MAX_NAMES) return joinAll(list);
+    return say('editor.list.more', { names: commaList(list.slice(0, MAX_NAMES)), count: list.length - MAX_NAMES });
 }
 
 /** Chip label of a number: '6', 'c', '1/2', or the virtual placeholder. */
@@ -282,132 +359,174 @@ export function numberLabel(n: DragNumber): string {
 
 // --------------------------------------------------------------- private
 
-function verbFor(t: DragTarget, gesture: Gesture): string {
-    if (gesture === 'move') return 'Moved';
-    switch (t.shift) {
+/** The undo label's verb (a key) and what it names. */
+function undoParts(target: DragTarget, gesture: Gesture, twin: boolean): { key: MessageKey; subject: string } {
+    let key: MessageKey;
+    let subject: string;
+    if (gesture === 'move' && target.kind === 'level') {
+        const unit = target.units.find((u) => u.role === 'levelItem');
+        key = 'editor.undo.changed';
+        subject = levelName(target.cardSource, unit && unit.item !== undefined ? unit.item + 1 : 1);
+    } else {
+        // Shift on a level reshapes the whole curve: the curve's own name.
+        key = verbFor(target, gesture);
+        subject = target.kind === 'level' ? target.cardSource : target.subject;
+    }
+    if (twin) {
+        const names = target.twinNames && target.twinNames.length ? target.twinNames : null;
+        if (names) subject = say('editor.undo.withTwins', { subject, twins: joinNames(names.map(objectiveName)) });
+    }
+    return { key, subject };
+}
+
+/** The chip title: the subject and the text parts, ordered as the reader's language puts '{subject}: {text}'. */
+function titled(subject: string, parts: ChipPart[]): ChipPart[] {
+    const mark = '\u0000';
+    const whole = say('editor.drag.subjectText', { subject, text: mark });
+    const at = whole.indexOf(mark);
+    const out: ChipPart[] = [{ text: at >= 0 ? whole.slice(0, at) : whole, kind: 'plain' }, ...parts];
+    const after = at >= 0 ? whole.slice(at + mark.length) : '';
+    if (after) out.push({ text: after, kind: 'plain' });
+    return out;
+}
+
+function verbFor(target: DragTarget, gesture: Gesture): MessageKey {
+    if (gesture === 'move') return 'editor.undo.moved';
+    switch (target.shift) {
         case 'turn':
-            return 'Turned';
+            return 'editor.undo.turned';
         case 'stretch':
-            return 'Stretched';
+            return 'editor.undo.stretched';
         case 'resize':
-            return 'Resized';
+            return 'editor.undo.resized';
         default:
-            return 'Moved';
+            return 'editor.undo.moved';
     }
 }
 
-function pointLike(t: DragTarget): boolean {
-    return t.kind === 'point' || t.kind === 'vertex' || t.kind === 'label';
+function pointLike(target: DragTarget): boolean {
+    return target.kind === 'point' || target.kind === 'vertex' || target.kind === 'label';
 }
 
-function shiftPart(t: DragTarget): string {
-    switch (t.shift) {
+function shiftPart(target: DragTarget): string {
+    switch (target.shift) {
         case 'turn':
-            if (t.kind === 'path') return t.points.length === 2 ? 'Shift-drag to turn around the other end' : 'Shift-drag to turn';
-            return 'Shift-drag to turn';
+            return say(target.kind === 'path' && target.points.length === 2 ? 'editor.hint.shiftTurnEnd' : 'editor.hint.shiftTurn');
         case 'stretch':
-            return 'Shift-drag to stretch';
+            return say('editor.hint.shiftStretch');
         case 'resize':
-            return 'Shift-drag to resize';
+            return say('editor.hint.shiftResize');
         case 'straight':
-            return t.kind === 'label' ? '' : 'Shift-drag moves straight';
+            return target.kind === 'label' ? '' : say('editor.hint.shiftStraight');
         default:
             return '';
     }
 }
 
-function moveDetail(t: DragTarget, restricted: Restriction): string {
-    if (t.kind === 'level') return 'Drag to change this level · Shift-drag to reshape all levels';
-    if (t.kind === 'tangent') return 'Drag along the curve';
-    let base = 'Drag to move';
-    if (restricted === 'vertical') base = 'Drag to move up and down';
-    else if (restricted === 'horizontal') base = 'Drag to move sideways';
-    else if (restricted === 'line') base = 'Drag to slide it along its path';
+function moveDetail(target: DragTarget, restricted: Restriction): string {
+    if (target.kind === 'level') return say('editor.hint.level');
+    if (target.kind === 'tangent') return say('editor.hint.alongCurve');
+    let base = say('editor.hint.move');
+    if (restricted === 'vertical') base = say('editor.hint.moveVertical');
+    else if (restricted === 'horizontal') base = say('editor.hint.moveSideways');
+    else if (restricted === 'line') base = say('editor.hint.slide');
     // Points that can only slide have no straight-line option worth naming.
-    if (restricted !== 'none' && pointLike(t)) return base;
-    const shift = shiftPart(t);
-    return shift ? `${base} · ${shift}` : base;
+    if (restricted !== 'none' && pointLike(target)) return base;
+    const shift = shiftPart(target);
+    return shift ? say('editor.hint.join', { first: base, second: shift }) : base;
 }
 
 function hoverDetail(info: HoverInfo): string {
-    const t = info.target;
-    if (info.gesture === 'move') return moveDetail(t, info.restricted);
+    const target = info.target;
+    if (info.gesture === 'move') return moveDetail(target, info.restricted);
     if (info.shiftLock) return info.shiftLock.title;
-    const at = info.pivot ? ` ${pointText(info.pivot.at)}` : '';
-    switch (t.shift) {
+    const point = info.pivot ? pointText(info.pivot.at) : null;
+    switch (target.shift) {
         case 'turn':
-            return info.pivot ? `Shift-drag turns around ⊕${at}` : 'Shift-drag turns';
+            return point ? say('editor.hint.turnsAround', { point }) : say('editor.hint.turns');
         case 'stretch':
-            return info.pivot ? `Shift-drag stretches from ⊕${at}` : 'Shift-drag stretches';
+            return point ? say('editor.hint.stretchesFrom', { point }) : say('editor.hint.stretches');
         case 'resize':
-            return info.pivot ? `Shift-drag resizes around ⊕${at}` : 'Shift-drag resizes';
+            return point ? say('editor.hint.resizesAround', { point }) : say('editor.hint.resizes');
         case 'straight':
-            return t.kind === 'label' ? 'Drag to move' : 'Shift-drag moves straight';
+            return target.kind === 'label' ? say('editor.hint.move') : say('editor.hint.shiftStraight');
         default:
-            return moveDetail(t, info.restricted);
+            return moveDetail(target, info.restricted);
     }
 }
 
 const INSERT_ORDER: VirtualKind[] = ['shiftVar', 'add', 'factor', 'scaleVar'];
-const INSERT_WORDS: Record<VirtualKind, string> = { shiftVar: 'a shift', add: 'an offset', factor: 'a factor', scaleVar: 'a scale' };
+const INSERT_WORDS: Record<VirtualKind, MessageKey> = {
+    shiftVar: 'editor.note.shift',
+    add: 'editor.note.offset',
+    factor: 'editor.note.factor',
+    scaleVar: 'editor.note.scale',
+};
 
 function hoverNote(info: HoverInfo): string {
     const notes: string[] = [];
     const kinds = INSERT_ORDER.filter((k) => info.virtualKinds.includes(k));
-    if (kinds.length) notes.push(`Adds ${joinAll(kinds.map((k) => INSERT_WORDS[k]))}`);
+    if (kinds.length) notes.push(say('editor.note.adds', { things: joinAll(kinds.map((k) => say(INSERT_WORDS[k]))) }));
     for (const s of info.sharedSliders) {
-        if (s.users.length) notes.push(`${s.name} is also used by ${joinNames(s.users)}`);
+        if (s.users.length) notes.push(say('editor.note.sharedSlider', { name: s.name, users: joinNames(s.users) }));
     }
-    for (const twin of info.twins) notes.push(`Also changes ${twin}'s objective (same text)`);
-    if (info.passed) notes.push(`${info.passed.source} is computed: dragging here moves ${info.target.subject}`);
-    return notes.join('. ');
+    for (const twin of info.twins) notes.push(say('editor.note.twin', { name: twin }));
+    if (info.passed) notes.push(say('editor.note.passed', { source: info.passed.source, subject: info.target.subject }));
+    return notes.length ? notes.reduce((first, next) => say('editor.note.join', { first, next })) : '';
+}
+
+/** 'A, B' (the reader's list separator), without 'and'. */
+function commaList(list: readonly string[]): string {
+    return list.length ? list.reduce((first, next) => say('editor.list.comma', { first, next })) : '';
 }
 
 /** Like joinNames, without the 'and N more' cut. */
 function joinAll(list: readonly string[]): string {
     if (list.length <= 1) return list.join('');
-    return `${list.slice(0, -1).join(', ')} and ${list[list.length - 1]}`;
+    return say('editor.list.pair', { first: commaList(list.slice(0, -1)), last: list[list.length - 1] });
 }
 
-function liveDetail(t: DragTarget, status: { kind: LiveStatus; label?: string; pivot?: { x: number; y: number }; bound?: number }): string {
-    const at = status.pivot ? ` ${pointText(status.pivot)}` : '';
-    const bound = status.bound !== undefined && Number.isFinite(status.bound) ? formatNumber(status.bound) : '';
+function liveDetail(target: DragTarget, status: { kind: LiveStatus; label?: string; pivot?: { x: number; y: number }; bound?: number }): string {
+    const point = status.pivot ? pointText(status.pivot) : null;
+    const value = status.bound !== undefined && Number.isFinite(status.bound) ? formatNumber(status.bound) : '';
     switch (status.kind) {
         case 'none':
             return '';
         case 'vertical':
-            return 'only up and down';
+            return say('editor.live.onlyVertical');
         case 'horizontal':
-            return 'only sideways';
+            return say('editor.live.onlyHorizontal');
         case 'snapMarker':
-            return `snapped to ${status.label || 'the point'}`;
+            return status.label ? say('editor.live.snapped', { name: status.label }) : say('editor.live.snappedPoint');
         case 'origin':
-            return 'snapped to the origin';
+            return say('editor.live.origin');
         case 'throughMarker':
-            return `through ${status.label || 'the point'}`;
+            return status.label ? say('editor.live.through', { name: status.label }) : say('editor.live.throughPoint');
         case 'grid':
-            return 'on the grid';
+            return say('editor.live.grid');
         case 'slope':
-            if (status.label === 'horizontal' || status.label === 'vertical') return status.label;
-            return `slope ${status.label || ''}`.trim();
+            // The session names the two axis directions by these words; any other label is the slope itself.
+            if (status.label === 'horizontal') return say('editor.live.slopeHorizontal');
+            if (status.label === 'vertical') return say('editor.live.slopeVertical');
+            return status.label ? say('editor.live.slope', { value: status.label }) : say('editor.live.slopeOnly');
         case 'turning':
-            return `turning around ⊕${at}`;
+            return point ? say('editor.live.turning', { point }) : say('editor.live.turningAround');
         case 'stretching':
-            return `stretching from ⊕${at}`;
+            return point ? say('editor.live.stretching', { point }) : say('editor.live.stretchingFrom');
         case 'resizing':
-            return `resizing around ⊕${at}`;
+            return point ? say('editor.live.resizing', { point }) : say('editor.live.resizingAround');
         case 'clampMax':
-            return `${status.label || 'The slider'} is at its maximum (${bound})`;
+            return status.label ? say('editor.live.atMax', { name: status.label, value }) : say('editor.live.sliderAtMax', { value });
         case 'clampMin':
-            return `${status.label || 'The slider'} is at its minimum (${bound})`;
+            return status.label ? say('editor.live.atMin', { name: status.label, value }) : say('editor.live.sliderAtMin', { value });
         case 'stuck':
-            return 'cannot follow further';
+            return say('editor.live.stuck');
         case 'flip':
-            return `${t.subject} cannot turn further this way`;
+            return say('editor.live.flip', { subject: target.subject });
         case 'vertical89':
-            return 'a function cannot turn vertical: use a curve like x = 2';
+            return say('editor.live.vertical89');
         case 'mirrored':
-            return 'mirrored';
+            return say('editor.live.mirrored');
     }
 }
 

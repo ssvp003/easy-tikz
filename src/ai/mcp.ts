@@ -7,12 +7,18 @@
  * Nothing here touches Obsidian: the vault, the open note, pictures and
  * notices come through a ChartHost (src/ai/vaultHost.ts in the plugin, a
  * fake one in tests/ai.test.ts). The HTTP side is src/ai/server.ts.
+ *
+ * What the server answers is English, whatever language the person reads:
+ * every tool runs inside inEnglish (src/i18n) up to its first await, and
+ * what a tool computes after one is computed inside inEnglish again. Only
+ * the notice about a change, which the person reads, is in their language.
  */
 import { guideWithWords } from '../text/words';
 import GUIDE from '../../docs/ai.md';
 import { Data, Report, blocksOf, check, examples, fenced, minimize, parseJson, tikzOf, withSliders } from './charttool';
 import { LINE_BREAK, TextProblem, isChartText, parseChartText } from '../text/parse';
 import { printChartText, writeChartText } from '../text/print';
+import { inEnglish, t } from '../i18n';
 
 export const SERVER_NAME = 'easy-tikz';
 
@@ -51,7 +57,10 @@ export interface ChartHost {
     renderPng?(chart: Data): Promise<string | null>;
     /** How new blocks are written (the user's setting); text when left out. */
     blockFormat?(): 'text' | 'json';
-    /** Tell the user what an AI app changed. */
+    /**
+     * Tell the user what an AI app changed: `message` is a whole sentence in
+     * the user's language that names the note (`path`, for a link to it).
+     */
     notify(message: string, path: string): void;
 }
 
@@ -358,12 +367,15 @@ const TOOLS: ToolDef[] = [
             const block = blockFor(input, host);
             let where = '';
             const replace = stringArg(args, 'replace');
-            await host.write(path, (old) => {
-                const done = insertBlock(old, block, { after: stringArg(args, 'after'), replace });
-                where = replace !== undefined ? ` in place of line ${done.line}` : done.below ? ` below line ${done.below}; the chart starts at line ${done.line}` : ` at line ${done.line}`;
-                return done.text;
-            });
-            host.notify(exists ? 'An AI app added a chart' : 'An AI app made a new note with a chart', path);
+            await host.write(path, (old) =>
+                inEnglish(() => {
+                    const done = insertBlock(old, block, { after: stringArg(args, 'after'), replace });
+                    where = replace !== undefined ? ` in place of line ${done.line}` : done.below ? ` below line ${done.below}; the chart starts at line ${done.line}` : ` at line ${done.line}`;
+                    return done.text;
+                })
+            );
+            // After the write: the person's language holds again for the notice.
+            host.notify(t(exists ? 'problems.ai.addedChart' : 'problems.ai.madeNote', { path }), path);
             return text(`${exists ? `Added to ${path}${where}` : `Made the note ${path}`}.\n\n${reportText(r)}`);
         },
     },
@@ -379,17 +391,20 @@ const TOOLS: ToolDef[] = [
             const blocks = chartsIn(await host.read(path));
             if (!blocks.length) return text(`${path} has no easy-tikz charts.`);
             const out = [`${path}: ${blocks.length} chart${blocks.length > 1 ? 's' : ''}.`];
-            blocks.forEach((b, i) => {
-                let state: string;
-                if (isChartText(b.text)) {
-                    const parsed = parseChartText(b.text);
-                    state = parsed.problems.length || check(parsed.data).errors.length ? 'text, has problems' : 'text, ok';
-                } else {
-                    const parsed = parseJson(b.text);
-                    state = parsed.ok ? (check(parsed.data).errors.length ? 'JSON, has problems' : 'JSON, ok') : `not valid JSON: ${parsed.message}`;
-                }
-                out.push('', `Chart ${i + 1} (line ${b.line}, ${state}):`, b.text.trim());
-            });
+            // After the await: English again for the checks.
+            inEnglish(() =>
+                blocks.forEach((b, i) => {
+                    let state: string;
+                    if (isChartText(b.text)) {
+                        const parsed = parseChartText(b.text);
+                        state = parsed.problems.length || check(parsed.data).errors.length ? 'text, has problems' : 'text, ok';
+                    } else {
+                        const parsed = parseJson(b.text);
+                        state = parsed.ok ? (check(parsed.data).errors.length ? 'JSON, has problems' : 'JSON, ok') : `not valid JSON: ${parsed.message}`;
+                    }
+                    out.push('', `Chart ${i + 1} (line ${b.line}, ${state}):`, b.text.trim());
+                })
+            );
             return text(out.join('\n'));
         },
     },
@@ -412,21 +427,25 @@ const TOOLS: ToolDef[] = [
             const { path, exists } = notePath(host, stringArg(args, 'note'));
             writable(path);
             if (!exists) throw new ToolError(`There is no note ${path}. Use add_chart for a new one.`);
-            await host.write(path, (old) => {
-                const blocks = chartsIn(old);
-                if (!Number.isInteger(index) || index < 1 || index > blocks.length) {
-                    throw new ToolError(`"index" must be 1..${blocks.length}: the note has ${blocks.length} chart${blocks.length === 1 ? '' : 's'}.`);
-                }
-                const b = blocks[index - 1];
-                if (!b.end) throw new ToolError(`Chart ${index} has no closing fence; fix the note first.`);
-                const lines = old.split('\n');
-                let body: string[];
-                if (isChartText(b.text) && b.text.trim()) body = (input.text ?? writeChartText(b.text.replace(/\s+$/, ''), chart)).split('\n');
-                else body = fenced(chart).split('\n').slice(1, -1);
-                lines.splice(b.line, b.end - b.line - 1, ...body.map((l) => b.prefix + l));
-                return lines.join('\n');
-            });
-            host.notify(`An AI app changed chart ${index}`, path);
+            // The host may call this after an await of its own: English again inside.
+            await host.write(path, (old) =>
+                inEnglish(() => {
+                    const blocks = chartsIn(old);
+                    if (!Number.isInteger(index) || index < 1 || index > blocks.length) {
+                        throw new ToolError(`"index" must be 1..${blocks.length}: the note has ${blocks.length} chart${blocks.length === 1 ? '' : 's'}.`);
+                    }
+                    const b = blocks[index - 1];
+                    if (!b.end) throw new ToolError(`Chart ${index} has no closing fence; fix the note first.`);
+                    const lines = old.split('\n');
+                    let body: string[];
+                    if (isChartText(b.text) && b.text.trim()) body = (input.text ?? writeChartText(b.text.replace(/\s+$/, ''), chart)).split('\n');
+                    else body = fenced(chart).split('\n').slice(1, -1);
+                    lines.splice(b.line, b.end - b.line - 1, ...body.map((l) => b.prefix + l));
+                    return lines.join('\n');
+                })
+            );
+            // After the write: the person's language holds again for the notice.
+            host.notify(t('problems.ai.changedChart', { index, path }), path);
             return text(`Chart ${index} of ${path} replaced.\n\n${reportText(r)}`);
         },
     },
@@ -465,7 +484,9 @@ export async function callTool(name: string, args: unknown, host: ChartHost): Pr
     const tool = TOOLS.find((t) => t.name === name);
     if (!tool) return text(`Unknown tool "${name}". Tools: ${TOOLS.map((t) => t.name).join(', ')}`, true);
     try {
-        return await tool.run(args && typeof args === 'object' && !Array.isArray(args) ? (args as Record<string, unknown>) : {}, host);
+        // English up to the tool's first await; the tools wrap what they compute after one.
+        const given = args && typeof args === 'object' && !Array.isArray(args) ? (args as Record<string, unknown>) : {};
+        return await inEnglish(() => tool.run(given, host));
     } catch (e) {
         if (e instanceof ToolError) return text(e.message, true);
         return text(`The tool failed: ${e instanceof Error ? e.message : String(e)}`, true);
@@ -495,7 +516,7 @@ export async function handleMcp(message: unknown, host: ChartHost): Promise<RpcR
     if (!message || typeof message !== 'object') return rpcError(null, -32600, 'Invalid request');
     const msg = message as RpcRequest;
     try {
-        return await handleOne(msg, host);
+        return await inEnglish(() => handleOne(msg, host));
     } catch (e) {
         return msg.id === undefined ? null : rpcError(msg.id, -32603, `Internal error: ${e instanceof Error ? e.message : String(e)}`);
     }

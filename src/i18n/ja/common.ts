@@ -1,0 +1,36 @@
+/* 日本語: Words many parts use: buttons and actions such as Cancel, Save, Delete, Duplicate, Copy. */
+import type { Messages } from '../types';
+import type { common as en } from '../en/common';
+
+export const common: Messages<typeof en> = {
+    'common.cancel': 'キャンセル',
+    'common.save': '保存',
+    'common.delete': '削除',
+    'common.duplicate': '複製',
+    'common.moveUp': '上へ移動',
+    'common.moveDown': '下へ移動',
+    'common.copy': 'コピー',
+    'common.copied': 'コピーしました',
+    'common.label': 'ラベル',
+    'common.name': '名前',
+    'common.enterName': '名前を入力してください',
+    'common.none': 'なし',
+    'common.solid': '実線',
+    'common.dashed': '破線',
+    'common.restore': '復元',
+    'common.discard': '破棄',
+    'common.replace': '置き換える',
+    'common.reset': 'リセット',
+    'common.notNow': '今はしない',
+    'common.undo': '元に戻す',
+    'common.redo': 'やり直す',
+    'common.moreActions': 'その他の操作',
+    'common.add': '追加',
+    'common.remove': '削除',
+    'common.done': '完了',
+    'common.close': '閉じる',
+    'common.open': '開く',
+    'common.edit': '編集',
+    'common.min': '最小',
+    'common.max': '最大',
+};

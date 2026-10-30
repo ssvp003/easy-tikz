@@ -1,0 +1,16 @@
+/*
+ * 日本語 (Japanese): every key of src/i18n/en, one file per part like the
+ * English. The compiler refuses a missing key; tests/i18n.test.ts checks that
+ * every translation keeps the named places of its English text.
+ */
+import type { Messages } from '../types';
+import type { EN } from '../en';
+import { common } from './common';
+import { editor } from './editor';
+import { build } from './build';
+import { panels } from './panels';
+import { plugin } from './plugin';
+import { problems } from './problems';
+import { help } from './help';
+
+export const JA: Messages<typeof EN> = { ...common, ...editor, ...build, ...panels, ...plugin, ...problems, ...help };

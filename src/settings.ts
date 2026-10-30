@@ -3,6 +3,7 @@ import { MathContext, MathContextInput } from './mathcontext';
 import { View } from './geometry';
 import { SCHEMA_VERSION, migrateSettings } from './migrate';
 import { generateTikz2D, generateTikz3D } from './export';
+import { t } from './i18n';
 
 /** The six axis range keys. */
 export type RangeKey = 'xmin' | 'xmax' | 'ymin' | 'ymax' | 'zmin' | 'zmax';
@@ -188,7 +189,9 @@ export class SettingsManager {
      * RANGE_DEFAULTS (the 3.x literals -0.5, 10, -0.5, 5, -5, 5) per bound when
      * a bound is empty / invalid / non-finite, and to the default PAIR when
      * min >= max.
-     * Every fallback is reported in `errors` ('xmax: Unknown name b').
+     * Every fallback is reported in `errors` ('xmax: Unknown name b'): the
+     * key and ': ' stay as they are (the problem line and the range fields
+     * read them), the text after them is in the reader's language.
      */
     resolveView(ctx: MathContext): { view: View & { zmin: number; zmax: number }; errors: string[] } {
         const errors: string[] = [];
@@ -201,7 +204,7 @@ export class SettingsManager {
             }
             // '1e999' is a numeric literal that tryValue passes through as Infinity.
             if (!Number.isFinite(res.value)) {
-                errors.push(`${key}: not a finite number`);
+                errors.push(`${key}: ${t('plugin.range.notFinite')}`);
                 return fallback;
             }
             return res.value;
@@ -215,7 +218,7 @@ export class SettingsManager {
             if (lo < hi) {
                 resolved.push(lo, hi);
             } else {
-                errors.push(`${maxKey}: must be greater than ${minKey}`);
+                errors.push(`${maxKey}: ${t('plugin.range.notAboveMin', { min: minKey })}`);
                 resolved.push(minDefault, maxDefault);
             }
         }

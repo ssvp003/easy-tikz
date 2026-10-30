@@ -20,7 +20,7 @@ import { applyFamily, boundsFor, fromPx, planDrag, quantizeDrag, solveDrag, toPx
 import type { Bounds, DragPlan, DragProblem, Family } from './solver';
 import { choosePivot, pivotCandidates, pivotServes } from './pivot';
 import type { GraphForm } from './pivot';
-import { dragAnnouncement, hoverChip, liveChip, lockFor, noPivotLockFor, shiftLockFor, undoLabel } from './describe';
+import { dragAnnouncement, hoverChip, liveChip, lockFor, noPivotLockFor, objectiveName, shiftLockFor, undoLabel, undoSubject } from './describe';
 import type { HoverInfo, LiveStatus } from './describe';
 import { fieldText, refKey, sliderUsers, variableSide } from './targets';
 import type {
@@ -887,7 +887,7 @@ export class DragSession {
         this.ghost = pointLike(t) || t.kind === 'tangent' ? t.points.map((q) => [q]) : t.lines;
         // Start texts of every field any gesture of this target may write (units of both gestures, twins).
         const names = new Map<string, string>();
-        t.twins.forEach((tw, i) => names.set(refKey(tw.ref), `${(t.twinNames && t.twinNames[i]) || ''}'s objective`));
+        t.twins.forEach((tw, i) => names.set(refKey(tw.ref), objectiveName((t.twinNames && t.twinNames[i]) || '')));
         for (const spec of [...t.units, ...t.twins]) {
             const key = refKey(spec.ref);
             if (this.startTexts.has(key)) continue;
@@ -1527,6 +1527,7 @@ export class DragSession {
         const display = core.fields.map((f) => final.get(f.key) ?? f.text).join(', ');
         return {
             label,
+            subject: undoSubject(this.target, gesture, twinChanged),
             fields,
             params,
             makeSlider: this.rebased ? null : this.makeSliderOffer(final, tidyFields),

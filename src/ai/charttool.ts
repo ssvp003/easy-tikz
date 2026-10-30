@@ -3,7 +3,8 @@
  * with the plugin's own code (problems, fields the plugin would ignore, and
  * what the chart computes), list the examples, and leave out default fields.
  * The local AI server's tools (src/ai/mcp.ts) are built on it. Pure: no
- * Obsidian, so tests/ai.test.ts runs it in Node.
+ * Obsidian, so tests/ai.test.ts runs it in Node. What it reports is for AI
+ * apps: English, whatever language the person reads (inEnglish).
  */
 import { EXAMPLES, defaultFunction, defaultTool, migrateSettings } from '../migrate';
 import { SettingsManager } from '../settings';
@@ -17,6 +18,7 @@ import { COLOR_MAP, THICKNESS_MAP } from '../colors';
 import type { Pt } from '../geometry';
 import type { Annotation, RendererConfig, Tool, ToolType } from '../types';
 import { Data, LIST_KEYS, canonical, clone, minimize } from '../chartdata';
+import { inEnglish } from '../i18n';
 
 export type { Data };
 export { canonical, clone, minimize };
@@ -452,7 +454,12 @@ export function withSliders(data: Data, sliders: Record<string, number>, report?
     return out;
 }
 
+/** The plugin's checks of a chart and what it computes, in English (the problems of the plugin's own code included). */
 export function check(data: Data, sliders: Record<string, number> = {}): Report {
+    return inEnglish(() => checkChart(data, sliders));
+}
+
+function checkChart(data: Data, sliders: Record<string, number>): Report {
     const defaults = defaultsByPart();
     const report: Report = { errors: [], infos: [], lines: [] };
     // Nothing is computed for a chart over the limits: that is what they protect.
@@ -716,18 +723,23 @@ interface Example {
     data: Data;
 }
 
+/** The examples and the guides' charts, with their English titles (read inside inEnglish). */
 export function examples(): Example[] {
-    const out: Example[] = EXAMPLES.map((e) => ({ id: e.id, title: e.title, about: e.description, data: e.data }));
-    for (const g of GUIDES) out.push({ id: g.id, title: g.title, about: g.summary, data: g.chart });
-    return out;
+    return inEnglish(() => {
+        const out: Example[] = EXAMPLES.map((e) => ({ id: e.id, title: e.title, about: e.description, data: e.data }));
+        for (const g of GUIDES) out.push({ id: g.id, title: g.title, about: g.summary, data: g.chart });
+        return out;
+    });
 }
 
 
 /** The pgfplots code the plugin exports for a chart: a standalone document, or the tikzpicture alone. */
 export function tikzOf(data: Data, standalone = true): string {
-    const loaded = load(data);
-    if (!standalone) loaded.settings.setValue('documentSetup', false);
-    return loaded.settings.generateTikzCode(loaded.math);
+    return inEnglish(() => {
+        const loaded = load(data);
+        if (!standalone) loaded.settings.setValue('documentSetup', false);
+        return loaded.settings.generateTikzCode(loaded.math);
+    });
 }
 
 /** Every part of a chart with its default fields, as `fields` prints it. */

@@ -29,6 +29,7 @@
  * `2(x - h)^2` is (implicitPowerBase).
  */
 import type { Affine, IssueFix } from './mathcontext';
+import { Language, language, t as msg } from './i18n';
 
 /**
  * Compile-time problem in user math (syntax, unknown name, wrong variable,
@@ -221,7 +222,7 @@ export function tokenize(src: string): Token[] {
         }
         const op = OPERATORS.find((p) => src.startsWith(p, i));
         if (!op) {
-            throw new ExprError(`Unexpected character '${ch}'`, { pos: i });
+            throw new ExprError(msg('problems.expr.unexpectedChar', { char: ch }), { pos: i });
         }
         tokens.push({ kind: 'op', text: op, value: 0, pos: i, end: i + op.length });
         i += op.length;
@@ -370,17 +371,17 @@ class Parser {
 
     /** Throw a positioned error for the token at hand. */
     fail(t: Token = this.peek()): never {
-        if (t.kind === 'end') throw new ExprError('Unexpected end of expression', { pos: t.pos });
+        if (t.kind === 'end') throw new ExprError(msg('problems.expr.unexpectedEnd'), { pos: t.pos });
         if (t.kind === 'op' && t.text === '=') {
             if (this.mode === 'cond') {
-                throw new ExprError('Use <= or >= in a condition, not =', { pos: t.pos });
+                throw new ExprError(msg('problems.expr.equalsInCondition'), { pos: t.pos });
             }
             if (this.mode === 'eq') {
-                throw new ExprError('An equation has only one =', { pos: t.pos });
+                throw new ExprError(msg('problems.expr.oneEquals'), { pos: t.pos });
             }
-            throw new ExprError('Use == to compare (= is only for equations)', { pos: t.pos });
+            throw new ExprError(msg('problems.expr.compareWithDoubleEquals'), { pos: t.pos });
         }
-        throw new ExprError(`Unexpected '${t.text}'`, { pos: t.pos });
+        throw new ExprError(msg('problems.expr.unexpected', { token: t.text }), { pos: t.pos });
     }
 
     private expectClose(open: Token): Token {
@@ -389,13 +390,13 @@ class Parser {
             this.i++;
             return t;
         }
-        if (t.kind === 'end') throw new ExprError("Missing ')'", { pos: open.pos });
+        if (t.kind === 'end') throw new ExprError(msg('problems.expr.missingParen'), { pos: open.pos });
         return this.fail(t);
     }
 
     /** Whole source in the parser's mode. */
     parseTop(): Node {
-        if (this.atEnd()) throw new ExprError('Enter an expression', { pos: 0 });
+        if (this.atEnd()) throw new ExprError(msg('problems.expr.enterExpression'), { pos: 0 });
         let node: Node;
         if (this.mode === 'cond') {
             node = this.ternary();
@@ -454,12 +455,12 @@ class Parser {
                     this.i++;
                     out.push({ kind: 'name', name: t.text, s: t.pos, e: t.end });
                 } else {
-                    throw new ExprError(names ? 'Write a point as (x, y) or a points tool name' : 'Write a point as (x, y)', {
+                    throw new ExprError(msg(names ? 'problems.expr.writePointOrName' : 'problems.expr.writePoint'), {
                         pos: t.pos,
                     });
                 }
                 if (!this.atEnd() && !this.isOp(';')) {
-                    throw new ExprError('Separate points with ;', { pos: this.peek().pos });
+                    throw new ExprError(msg('problems.expr.separatePoints'), { pos: this.peek().pos });
                 }
             } catch (e) {
                 if (e instanceof ExprError && e.index === undefined) e.index = index;
@@ -479,7 +480,7 @@ class Parser {
         const then = this.ternary();
         if (!this.eatOp(':')) {
             const t = this.peek();
-            if (t.kind === 'end') throw new ExprError("Missing ':' in a ? b : c", { pos: t.pos });
+            if (t.kind === 'end') throw new ExprError(msg('problems.expr.missingColon'), { pos: t.pos });
             this.fail(t);
         }
         const otherwise = this.ternary();
@@ -556,7 +557,7 @@ class Parser {
                 // previous operand is a typo, not a product (`3 .5` still is one).
                 const prev = this.toks[this.i - 1];
                 if (t.kind === 'num' && t.text[0] === '.' && prev && prev.end === t.pos) {
-                    throw new ExprError("Unexpected '.': write one decimal point per number, or * to multiply", { pos: t.pos });
+                    throw new ExprError(msg('problems.expr.unexpectedDot'), { pos: t.pos });
                 }
                 const right = this.unary();
                 left = { t: 'binary', op: '*', left, right, implicit: true, s: left.s, e: right.e };
@@ -615,7 +616,7 @@ class Parser {
                 this.i++;
                 const member = this.next();
                 if (member.kind !== 'id') {
-                    throw new ExprError("Expected a name after 'Math.'", { pos: member.pos });
+                    throw new ExprError(msg('problems.expr.nameAfterMath'), { pos: member.pos });
                 }
                 if (this.isOp('(')) {
                     const open = this.next();
@@ -638,7 +639,7 @@ class Parser {
             return { t: 'name', name: t.text, s: t.pos, e: t.end };
         }
         if (t.kind === 'op' && t.text === ')') {
-            throw new ExprError("Unexpected ')'", { pos: t.pos });
+            throw new ExprError(msg('problems.expr.unexpected', { token: ')' }), { pos: t.pos });
         }
         return this.fail(t);
     }
@@ -691,18 +692,28 @@ type Parsed = Node | Node[] | TupleItem[] | ExprError;
 /** Module-level cache of parse results keyed by mode + source (scope-free, safe to share). */
 const PARSE_CACHE = new Lru<string, Parsed>(1024);
 
+/**
+ * The language a cached parse error was written in. Trees are shared by
+ * every language; an error is reused only in its own, so the AI server
+ * (English) and the editor (the reader's language) never see each other's.
+ */
+const ERROR_LANGUAGE = new WeakMap<ExprError, Language>();
+
 function cachedParse<T extends Parsed>(key: string, run: () => T): T {
     const hit = PARSE_CACHE.get(key);
     if (hit !== undefined) {
-        if (hit instanceof ExprError) throw hit;
-        return hit as T;
+        if (!(hit instanceof ExprError)) return hit as T;
+        if (ERROR_LANGUAGE.get(hit) === language()) throw hit;
     }
     try {
         const out = run();
         PARSE_CACHE.set(key, out);
         return out;
     } catch (e) {
-        if (e instanceof ExprError) PARSE_CACHE.set(key, e);
+        if (e instanceof ExprError) {
+            ERROR_LANGUAGE.set(e, language());
+            PARSE_CACHE.set(key, e);
+        }
         throw e;
     }
 }
@@ -912,7 +923,8 @@ export function scanTemplate(src: string): ScannedTemplate {
             }
             const close = src.indexOf('}', i + 1);
             if (close < 0) {
-                if (!error) error = { message: "Missing '}' in the label", pos: i };
+                // Cached for every language: the message is written when it is read.
+                if (!error) error = { pos: i, get message() { return msg('problems.expr.labelMissingBrace'); } };
                 text += src.slice(i);
                 break;
             }
@@ -1093,7 +1105,7 @@ function resolveCall(node: CallNode, env: Env, src: string): CallTarget {
     if (res && res.k === 'fn') return { k: 'fn', ref: res.ref };
     if (res) {
         if (node.args.length !== 1) {
-            throw new ExprError(`'${node.name}' is not a function`, { pos: node.ns });
+            throw new ExprError(msg('problems.expr.notAFunction', { name: node.name }), { pos: node.ns });
         }
         return { k: 'mul', res };
     }
@@ -1131,19 +1143,17 @@ function implicitPowerBase(n: BinaryNode, env: Env): CallNode | null {
 
 function checkArity(name: string, b: Builtin, count: number, pos: number): void {
     if (count >= b.min && count <= b.max) return;
-    let need: string;
-    if (b.min === b.max) need = b.min === 1 ? '1 argument' : `${b.min} arguments`;
-    else need = `at least ${b.min} argument${b.min === 1 ? '' : 's'}`;
-    throw new ExprError(`${name} takes ${need}`, { pos });
+    const key = b.min === b.max ? 'problems.expr.takesArguments' : 'problems.expr.takesAtLeast';
+    throw new ExprError(msg(key, { name, count: b.min }), { pos });
 }
 
 /** The callee may be called from here (not parametric, no error). */
 function checkCallable(ref: FnRef, pos: number): void {
     if (ref.kind === 'parametric') {
-        throw new ExprError(`${ref.name} is parametric and cannot be called`, { pos });
+        throw new ExprError(msg('problems.expr.parametricCall', { name: ref.name }), { pos });
     }
     if (ref.error) {
-        throw new ExprError(`depends on ${ref.name} (error)`, { pos });
+        throw new ExprError(msg('problems.expr.dependsOnError', { name: ref.name }), { pos });
     }
 }
 
@@ -1340,14 +1350,14 @@ function valueSplit(
     const fresh = parts.filter((p) => !known.includes(p));
     if (fresh.length > 1) return null;
     const joined = parts.join('*');
-    const fix: IssueFix = { label: `Use ${joined}`, rewrite: rewrite(src, node.ns, node.ne, joined) };
+    const fix: IssueFix = { label: msg('problems.expr.fixUse', { fix: joined }), rewrite: rewrite(src, node.ns, node.ne, joined) };
     const letter = fresh.length === 1 ? fresh[0] : null;
     if (letter && !isReservedName(letter) && !env.noSlider(letter)) {
-        fix.label = `Use ${joined}, add slider ${letter}`;
+        fix.label = msg('problems.expr.fixUseAddSlider', { fix: joined, name: letter });
         fix.addParameter = letter;
     }
     return {
-        err: new ExprError(`${message}. Did you mean ${joined}?`, { pos: node.ns, fix }),
+        err: new ExprError(msg('problems.expr.didYouMean', { message, suggestion: joined }), { pos: node.ns, fix }),
         byVar: env.vars.some((v) => v.includes(last)),
     };
 }
@@ -1355,13 +1365,13 @@ function valueSplit(
 function unknownFunction(node: CallNode, env: Env, src: string): ExprError {
     const label = node.math ? `Math.${node.name}` : node.name;
     const pos = node.ns;
-    const message = `Unknown function '${label}'`;
+    const message = msg('problems.expr.unknownFunction', { name: label });
     if (node.math) {
         const sug = closestName(node.name, Object.keys(MATH_FUNCTIONS));
         if (!sug) return new ExprError(message, { pos });
         return new ExprError(message, {
             pos,
-            fix: { label: `Use Math.${sug}`, rewrite: rewrite(src, node.ns, node.ne, `Math.${sug}`) },
+            fix: { label: msg('problems.expr.fixUse', { fix: `Math.${sug}` }), rewrite: rewrite(src, node.ns, node.ne, `Math.${sug}`) },
         });
     }
     const notHere = env.notHere(node.name);
@@ -1371,9 +1381,9 @@ function unknownFunction(node: CallNode, env: Env, src: string): ExprError {
     const parts = splitName(node.name, env.knownNames().concat(fnNames), isFn, true);
     if (parts) {
         const joined = parts.join('*');
-        return new ExprError(`${message}. Did you mean ${joined}?`, {
+        return new ExprError(msg('problems.expr.didYouMean', { message, suggestion: joined }), {
             pos,
-            fix: { label: `Use ${joined}`, rewrite: rewrite(src, node.ns, node.ne, joined) },
+            fix: { label: msg('problems.expr.fixUse', { fix: joined }), rewrite: rewrite(src, node.ns, node.ne, joined) },
         });
     }
     // 'ax(x - 2)' is a factored parabola, not max(x - 2).
@@ -1383,7 +1393,7 @@ function unknownFunction(node: CallNode, env: Env, src: string): ExprError {
     if (sug) {
         return new ExprError(message, {
             pos,
-            fix: { label: `Use ${sug}`, rewrite: rewrite(src, node.ns, node.ne, sug) },
+            fix: { label: msg('problems.expr.fixUse', { fix: sug }), rewrite: rewrite(src, node.ns, node.ne, sug) },
         });
     }
     if (product) return product.err;
@@ -1395,7 +1405,7 @@ function unknownFunction(node: CallNode, env: Env, src: string): ExprError {
  * '2x', 'pi', '3') and nothing binds tighter after it, offer `sin(x)`.
  */
 function builtinAsName(name: string, s: number, e: number, src: string): ExprError {
-    const message = `${name} is a function: write ${name}(...)`;
+    const message = msg('problems.expr.functionAsValue', { name });
     const m = /^(\s+)((?:\d+(?:\.\d+)?)?[A-Za-zπθ][A-Za-z0-9_]*|\d+(?:\.\d+)?)(?=\s*(?:$|[-+),;<>=!&|?:]))/.exec(src.slice(e));
     const operand = m ? m[2] : '';
     const word = /[A-Za-zπθ][A-Za-z0-9_]*$/.exec(operand)?.[0] ?? '';
@@ -1403,7 +1413,7 @@ function builtinAsName(name: string, s: number, e: number, src: string): ExprErr
     const call = `${name}(${operand})`;
     return new ExprError(message, {
         pos: s,
-        fix: { label: `Use ${call}`, rewrite: rewrite(src, s, e + m[1].length + operand.length, call) },
+        fix: { label: msg('problems.expr.fixUse', { fix: call }), rewrite: rewrite(src, s, e + m[1].length + operand.length, call) },
     });
 }
 
@@ -1415,48 +1425,48 @@ function unknownName(name: string, s: number, e: number, env: Env, src: string):
         e = at + name.length;
     }
     if (own(BUILTINS, name)) return builtinAsName(name, s, e, src);
-    if (name === 'Math') return new ExprError("Write Math.name, e.g. Math.PI", { pos: s });
+    if (name === 'Math') return new ExprError(msg('problems.expr.writeMathName'), { pos: s });
     const notHere = env.notHere(name);
     if (notHere) return new ExprError(notHere, { pos: s });
-    const message = `Unknown name '${name}'`;
+    const message = msg('problems.expr.unknownName', { name });
     const fnNames = env.fnNames();
     const known = env.knownNames();
     const isFnPart = (p: string) => own(BUILTINS, p) !== undefined || fnNames.includes(p);
     // 'sinx', '2sinx', 'sin2x': a builtin without parentheses, never a slider name.
     const call = splitCall(name, known, isFnPart);
     if (call) {
-        return new ExprError(`${message}. Did you mean ${call}?`, {
+        return new ExprError(msg('problems.expr.didYouMean', { message, suggestion: call }), {
             pos: s,
-            fix: { label: `Use ${call}`, rewrite: rewrite(src, s, e, call) },
+            fix: { label: msg('problems.expr.fixUse', { fix: call }), rewrite: rewrite(src, s, e, call) },
         });
     }
     const parts = splitName(name, known, isFnPart, false);
     if (parts) {
         // A split that needs a variable this field does not have ('xy' in f(x)) only trades one error for another.
         const blocked = parts.map((p) => env.notHere(p)).find((m) => m !== null);
-        if (blocked) return new ExprError(`${message}. ${blocked}`, { pos: s });
+        if (blocked) return new ExprError(msg('problems.expr.unknownBecause', { message, reason: blocked }), { pos: s });
         const joined = parts.join('*');
-        const fix: IssueFix = { label: `Use ${joined}`, rewrite: rewrite(src, s, e, joined) };
+        const fix: IssueFix = { label: msg('problems.expr.fixUse', { fix: joined }), rewrite: rewrite(src, s, e, joined) };
         // One new letter ('cx' with only x known): create its slider in the same step.
         const fresh = parts.filter((p) => !known.includes(p));
         const letter = fresh.length === 1 ? fresh[0] : null;
         if (letter && !isReservedName(letter) && !env.noSlider(letter)) {
-            fix.label = `Use ${joined}, add slider ${letter}`;
+            fix.label = msg('problems.expr.fixUseAddSlider', { fix: joined, name: letter });
             fix.addParameter = letter;
         }
-        return new ExprError(`${message}. Did you mean ${joined}?`, { pos: s, fix });
+        return new ExprError(msg('problems.expr.didYouMean', { message, suggestion: joined }), { pos: s, fix });
     }
     // LP-style x1, x2 while the axes are still x, y; only in fields that use variables
     // (x0, y0, x3 and value fields fall through to 'Add slider').
     const indexed = /^([xy])[12]$/.exec(name);
     if (indexed && env.defaultVars && env.vars.length > 0) {
         const letter = indexed[1];
-        return new ExprError(`${message}. Set axis variables to ${letter}1, ${letter}2 in Chart > Axes?`, { pos: s });
+        return new ExprError(msg('problems.expr.setAxisVariables', { message, first: `${letter}1`, second: `${letter}2` }), { pos: s });
     }
     if (isReservedName(name) || env.noSlider(name) || !IDENT_FULL_RE.test(name)) {
         return new ExprError(message, { pos: s });
     }
-    return new ExprError(message, { pos: s, unknown: name, fix: { label: `Add slider ${name}`, addParameter: name } });
+    return new ExprError(message, { pos: s, unknown: name, fix: { label: msg('problems.expr.fixAddSlider', { name }), addParameter: name } });
 }
 
 // ---------------------------------------------------------------- compiler
@@ -1663,7 +1673,7 @@ class Compiler {
                 return konst(n.value);
             case 'member': {
                 const v = own(MATH_CONSTANTS, n.name);
-                if (v === undefined) throw new ExprError(`Unknown name 'Math.${n.name}'`, { pos: n.s });
+                if (v === undefined) throw new ExprError(msg('problems.expr.unknownName', { name: `Math.${n.name}` }), { pos: n.s });
                 return konst(v);
             }
             case 'name':
@@ -1780,7 +1790,7 @@ class Compiler {
         if (target.k === 'fn') {
             checkCallable(target.ref, n.ns);
             if (n.args.length !== 1) {
-                throw new ExprError(`${n.name} takes 1 argument`, { pos: n.ns });
+                throw new ExprError(msg('problems.expr.takesArguments', { name: n.name, count: 1 }), { pos: n.ns });
             }
             const A = this.node(n.args[0]);
             const call = target.ref.call;
@@ -2413,7 +2423,7 @@ class PgfPrinter {
 
     private name(name: string): Printed {
         const res = resolveName(name, this.env);
-        if (!res) throw new ExprError(`Unknown name '${name}'`);
+        if (!res) throw new ExprError(msg('problems.expr.unknownName', { name }));
         switch (res.k) {
             case 'var':
                 return atom(this.varText[res.index]);

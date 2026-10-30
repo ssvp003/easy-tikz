@@ -25,6 +25,7 @@ import { Parameter } from '../types';
 import { RESERVED_NAMES } from '../migrate';
 import type { HistoryEntry } from '../drag/history';
 import { PanelHost } from './host';
+import { t } from '../i18n';
 import {
     NumberInputHandle,
     PopoverHandle,
@@ -162,11 +163,11 @@ function slot(el: HTMLElement, kind: string, index: number): void {
 export function createSlidersDock(parent: HTMLElement, host: PanelHost): SlidersDockHandle {
     const el = parent.createDiv({ cls: ['etz-dock', 'tikz-hidden'] });
     const header = el.createDiv({ cls: 'etz-dock-header' });
-    const title = header.createDiv({ cls: 'etz-dock-title', text: 'Sliders', attr: { role: 'heading', 'aria-level': '2' } });
+    const title = header.createDiv({ cls: 'etz-dock-title', text: t('panels.sliders.title'), attr: { role: 'heading', 'aria-level': '2' } });
     title.id = uniqueId('dock-title');
     el.setAttr('role', 'region');
     el.setAttr('aria-labelledby', title.id);
-    const addButton = textButton(header, { text: 'Add slider', icon: 'plus', variant: 'ghost', size: 'sm', cls: 'etz-dock-add', onClick: () => addSlider() });
+    const addButton = textButton(header, { text: t('panels.sliders.add'), icon: 'plus', variant: 'ghost', size: 'sm', cls: 'etz-dock-add', onClick: () => addSlider() });
     const body = el.createDiv({ cls: 'etz-dock-body' });
 
     let mode: Mode = 'empty';
@@ -239,26 +240,26 @@ export function createSlidersDock(parent: HTMLElement, host: PanelHost): Sliders
 
     /** Why `name` cannot name parameter `index`, or null when it can. */
     const nameProblem = (name: string, index: number): string | null => {
-        if (!name) return 'Enter a name';
-        if (!NAME_RE.test(name)) return 'Start with a letter, then letters, digits or _';
-        if (RESERVED_NAMES.has(name)) return `${name} is a built-in name`;
-        if (isAxisName(name)) return `${name} is an axis variable`;
-        if (params().some((p, i) => i !== index && p.name === name)) return `${name} is already a slider`;
+        if (!name) return t('common.enterName');
+        if (!NAME_RE.test(name)) return t('panels.sliders.nameRule');
+        if (RESERVED_NAMES.has(name)) return t('panels.sliders.nameBuiltIn', { name });
+        if (isAxisName(name)) return t('panels.sliders.nameAxis', { name });
+        if (params().some((p, i) => i !== index && p.name === name)) return t('panels.sliders.nameSlider', { name });
         const tools = names('tools');
         if (names('functions').includes(name) || names('functions3D').includes(name) || tools.includes(name)) {
-            return `${name} is already used`;
+            return t('panels.sliders.nameUsed', { name });
         }
         const derived = DERIVED_RE.exec(name);
-        if (derived && tools.includes(derived[1])) return `${name} is a value computed by ${derived[1]}`;
+        if (derived && tools.includes(derived[1])) return t('panels.sliders.nameComputed', { name, tool: derived[1] });
         return null;
     };
 
     /** Why `value` cannot become `key` of parameter `p`, or null. */
     const rangeProblem = (p: Parameter, key: Bound, value: number): string | null => {
-        if (key === 'min' && value >= p.max) return 'Min must be less than max';
-        if (key === 'max' && value <= p.min) return 'Max must be greater than min';
-        if (key === 'step' && value <= 0) return 'Step must be greater than 0';
-        if (key === 'step' && value > p.max - p.min) return 'Step must fit inside the range';
+        if (key === 'min' && value >= p.max) return t('panels.sliders.minBelowMax');
+        if (key === 'max' && value <= p.min) return t('panels.sliders.maxAboveMin');
+        if (key === 'step' && value <= 0) return t('panels.sliders.stepPositive');
+        if (key === 'step' && value > p.max - p.min) return t('panels.sliders.stepFits');
         return null;
     };
 
@@ -331,7 +332,7 @@ export function createSlidersDock(parent: HTMLElement, host: PanelHost): Sliders
     const recordChange = (name: string, before: number, after: number) => {
         if (!host.pushHistory || sameValue(before, after)) return;
         const entry: HistoryEntry = {
-            label: `Changed slider ${name}`,
+            label: t('panels.sliders.changed', { name }),
             stale: [],
             undo: () => restoreValue(entry, name, after, before),
             redo: () => restoreValue(entry, name, before, after),
@@ -379,7 +380,7 @@ export function createSlidersDock(parent: HTMLElement, host: PanelHost): Sliders
         host.settings.setValue('parameters', list);
         host.commit();
         refresh();
-        host.showUndo(`Deleted slider ${p.name}`, () => {
+        host.showUndo(t('panels.sliders.deleted', { name: p.name }), () => {
             const current = params();
             // The name may have been taken again in the meantime.
             if (current.some((q) => q.name === p.name)) return;
@@ -540,7 +541,7 @@ export function createSlidersDock(parent: HTMLElement, host: PanelHost): Sliders
         const p = params()[index];
         if (wasOpenHere || !p) return;
         const handle = popover(anchor, host, {
-            label: `Slider ${p.name} options`,
+            label: t('panels.sliders.options', { name: p.name }),
             align: 'end',
             // The dock sits right above the action bar: open the sheet over the preview.
             placement: 'above',
@@ -569,11 +570,11 @@ export function createSlidersDock(parent: HTMLElement, host: PanelHost): Sliders
                     });
                     f.bind(input.el);
                 };
-                bound('min', 'Min');
-                bound('max', 'Max');
-                bound('step', 'Step');
+                bound('min', t('common.min'));
+                bound('max', t('common.max'));
+                bound('step', t('panels.sliders.step'));
                 textButton(pop, {
-                    text: 'Delete slider',
+                    text: t('panels.sliders.delete'),
                     icon: 'trash-2',
                     size: 'sm',
                     cls: 'etz-dock-delete',
@@ -605,7 +606,7 @@ export function createSlidersDock(parent: HTMLElement, host: PanelHost): Sliders
         const line = rowEl.createDiv({ cls: 'etz-dock-line' });
 
         // Name: validated while typing, applied on Enter / blur, reverted on Escape.
-        const nameInput = textInput(line, { value: name, label: 'Slider name', monospace: true, cls: 'etz-dock-name' });
+        const nameInput = textInput(line, { value: name, label: t('panels.sliders.name'), monospace: true, cls: 'etz-dock-name' });
         slot(nameInput.el, 'name', index);
         line.createSpan({ cls: 'etz-dock-eq', text: '=', attr: { 'aria-hidden': 'true' } });
 
@@ -629,7 +630,7 @@ export function createSlidersDock(parent: HTMLElement, host: PanelHost): Sliders
             valueHolder.empty();
             valueInput = numberInput(valueHolder, {
                 value: p.value,
-                label: `Value of ${name}`,
+                label: t('panels.sliders.value', { name }),
                 step: p.step > 0 ? p.step : undefined,
                 cls: 'etz-dock-value',
                 onInput: (v) => {
@@ -660,9 +661,9 @@ export function createSlidersDock(parent: HTMLElement, host: PanelHost): Sliders
         buildValueInput(initial);
 
         line.createDiv({ cls: 'etz-dock-spacer' });
-        const play = iconButton(line, { icon: 'play', label: `Play ${name}`, pressed: false, onClick: () => togglePlay(index) });
+        const play = iconButton(line, { icon: 'play', label: t('panels.sliders.play', { name }), pressed: false, onClick: () => togglePlay(index) });
         slot(play.el, 'play', index);
-        const more = iconButton(line, { icon: 'more-horizontal', label: `Options for ${name}`, onClick: () => openOptions(index, more.el) });
+        const more = iconButton(line, { icon: 'more-horizontal', label: t('panels.sliders.more', { name }), onClick: () => openOptions(index, more.el) });
         slot(more.el, 'more', index);
 
         const msg = rowEl.createDiv({ cls: ['etz-dock-msg', 'tikz-hidden'], attr: { 'aria-live': 'polite' } });
@@ -679,7 +680,7 @@ export function createSlidersDock(parent: HTMLElement, host: PanelHost): Sliders
             const wrap = range.createDiv({ cls: ['etz-dock-end', `mod-${which}`] });
             const button = wrap.createEl('button', { cls: 'etz-dock-end-btn', attr: { type: 'button' } });
             slot(button, which, index);
-            const srLabel = () => `${which === 'min' ? 'Minimum' : 'Maximum'} of ${name}, click to edit`;
+            const srLabel = () => (which === 'min' ? t('panels.sliders.editMin', { name }) : t('panels.sliders.editMax', { name }));
             const buttonText = button.createSpan({ attr: { 'aria-hidden': 'true' } });
             const buttonLabel = button.createSpan({ cls: 'etz-sr-only', text: srLabel() });
             // Holds the number field (and its hidden label) while editing.
@@ -705,7 +706,7 @@ export function createSlidersDock(parent: HTMLElement, host: PanelHost): Sliders
                 button.addClass('tikz-hidden');
                 const editing: NumberInputHandle = numberInput(holder, {
                     value: p[which],
-                    label: which === 'min' ? `Minimum of ${name}` : `Maximum of ${name}`,
+                    label: which === 'min' ? t('panels.sliders.min', { name }) : t('panels.sliders.max', { name }),
                     step: p.step > 0 ? p.step : undefined,
                     cls: 'etz-dock-end-input',
                     onCommit: (v) => {
@@ -849,10 +850,10 @@ export function createSlidersDock(parent: HTMLElement, host: PanelHost): Sliders
             sync: (p) => {
                 if (p.name !== name) {
                     name = p.name;
-                    relabel(valueInput.el, `Value of ${name}`);
+                    relabel(valueInput.el, t('panels.sliders.value', { name }));
                     relabel(slider.input, name);
-                    play.setLabel(`Play ${name}`);
-                    more.setLabel(`Options for ${name}`);
+                    play.setLabel(t('panels.sliders.play', { name }));
+                    more.setLabel(t('panels.sliders.more', { name }));
                     for (const end of ends) end.relabel();
                 }
                 if (!releaseNameEscape && !focused(nameInput.el)) nameInput.setValue(name);
@@ -909,7 +910,7 @@ export function createSlidersDock(parent: HTMLElement, host: PanelHost): Sliders
                 valueEl.setText(formatValue(p.value, p.step));
                 const playing = anims.has(p.name);
                 pill.toggleClass('is-playing', playing);
-                stateEl.setText(playing ? ', playing' : '');
+                stateEl.setText(playing ? t('panels.sliders.playing') : '');
                 pill.setAttr('aria-expanded', String(isExpanded));
             },
         };

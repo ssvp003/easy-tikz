@@ -3,12 +3,19 @@
  * scripts/media/build-guides.mjs read, plus the small pure helpers both
  * share: category order, level names, the chart a step shows, the GitHub
  * link of a guide and the search. No DOM, no Obsidian.
+ *
+ * The data is English and stays English (the GitHub pages and the AI tools
+ * read GUIDES). The Help tab shows a guide through localGuide (src/guides/ja.ts)
+ * and its category and level through guideCategoryLabel / guideLevelLabel,
+ * which keep the English names as identifiers.
  */
+import { MessageKey, t, tIn } from '../i18n';
 import { ChartData, Guide, GuideCategory, GuideLevel } from './types';
 import { BASICS_GUIDES } from './basics';
 import { OPTIMISATION_GUIDES } from './optimisation';
 import { MORE_GUIDES } from './more';
 import { DYNAMIC_GUIDES } from './dynamic';
+import { localGuide } from './ja';
 
 /** Categories in display order (the order of the GuideCategory union). */
 export const GUIDE_CATEGORIES: readonly GuideCategory[] = [
@@ -21,12 +28,42 @@ export const GUIDE_CATEGORIES: readonly GuideCategory[] = [
     'Reference',
 ];
 
-/** Level names as shown on cards and guide pages. */
-export const GUIDE_LEVEL_LABELS: Readonly<Record<GuideLevel, string>> = {
-    start: 'Start here',
-    core: 'Core',
-    advanced: 'Advanced',
+/** The key of each category's name (the categories themselves are identifiers). */
+const CATEGORY_KEYS: Readonly<Record<GuideCategory, MessageKey>> = {
+    'Getting started': 'help.category.gettingStarted',
+    'Functions and sliders': 'help.category.functionsSliders',
+    'Regions and optimisation': 'help.category.regionsOptimisation',
+    'Points, lines and labels': 'help.category.pointsLinesLabels',
+    '3D': 'help.category.threeD',
+    'Notes and export': 'help.category.notesExport',
+    Reference: 'help.category.reference',
 };
+
+/** The key of each level's name. */
+const LEVEL_KEYS: Readonly<Record<GuideLevel, MessageKey>> = {
+    start: 'help.level.start',
+    core: 'help.level.core',
+    advanced: 'help.level.advanced',
+};
+
+/** Level names in English, as the guide pages on GitHub show them (the Help tab uses guideLevelLabel). */
+export const GUIDE_LEVEL_LABELS: Readonly<Record<GuideLevel, string>> = {
+    start: tIn('en', LEVEL_KEYS.start),
+    core: tIn('en', LEVEL_KEYS.core),
+    advanced: tIn('en', LEVEL_KEYS.advanced),
+};
+
+/** The name of a category in the reader's language; an unknown one as it is. */
+export function guideCategoryLabel(category: GuideCategory): string {
+    const key = CATEGORY_KEYS[category];
+    return key ? t(key) : String(category);
+}
+
+/** The name of a level in the reader's language; an unknown one as it is. */
+export function guideLevelLabel(level: GuideLevel): string {
+    const key = LEVEL_KEYS[level];
+    return key ? t(key) : String(level);
+}
 
 /** Position of a category in the display order; unknown categories sort last. */
 function categoryRank(category: string): number {
@@ -45,6 +82,19 @@ export const GUIDES: Guide[] = [...BASICS_GUIDES, ...OPTIMISATION_GUIDES, ...MOR
 
 export function guideById(id: string): Guide | undefined {
     return GUIDES.find((g) => g.id === id);
+}
+
+export { localGuide };
+
+/** Every guide in the reader's language, in display order (see localGuide). */
+export function localGuides(): Guide[] {
+    return GUIDES.map(localGuide);
+}
+
+/** A guide by id in the reader's language. */
+export function localGuideById(id: string): Guide | undefined {
+    const guide = guideById(id);
+    return guide ? localGuide(guide) : undefined;
 }
 
 /** The guides of one category, in display order. */
@@ -82,6 +132,8 @@ export function stepChart(guide: Guide, index: number): ChartData | null {
  */
 export function searchText(text: string): string {
     return String(text ?? '')
+        // Full-width letters, digits and spaces (as a Japanese input method types them) count as the plain ones.
+        .normalize('NFKC')
         .toLowerCase()
         .replace(/z/g, 's')
         .replace(/colour/g, 'color');
@@ -157,7 +209,8 @@ function stepText(step: Guide['steps'][number]): string {
 /**
  * Guides that contain every word of `query`, best first (title matches
  * before summary and outcomes, those before step text); ties keep the
- * display order. An empty query gives no hits.
+ * display order. An empty query gives no hits. The Help tab searches
+ * localGuides(), so a reader finds the words the guides show.
  */
 export function searchGuides(query: string, guides: readonly Guide[] = GUIDES): GuideHit[] {
     const tokens = searchTokens(query);
@@ -167,7 +220,7 @@ export function searchGuides(query: string, guides: readonly Guide[] = GUIDES): 
         const head: Array<[string, number]> = [
             [guide.title, 10],
             [guide.summary, 5],
-            [guide.category, 3],
+            [guideCategoryLabel(guide.category), 3],
             [(guide.outcomes || []).join(' '), 3],
         ];
         const steps = guide.steps || [];

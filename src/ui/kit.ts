@@ -60,6 +60,7 @@
 import { App, Menu, Modal, Scope, setIcon } from 'obsidian';
 import { COLOR_MAP, COLOR_OPTIONS, THICKNESS_MAP, THICKNESS_OPTIONS } from '../colors';
 import type { Issue, IssueFix, ValidateResult } from '../mathcontext';
+import { t } from '../i18n';
 
 /** What keyboard-aware components need from the host (PanelHost satisfies it). */
 export interface KeyContext {
@@ -583,7 +584,7 @@ export function liveSlider(parent: HTMLElement, opts: LiveSliderOptions): LiveSl
         readoutMode === 'input'
             ? numberInput(el, {
                   value,
-                  label: `${opts.label} value`,
+                  label: t('editor.kit.sliderValue', { label: opts.label }),
                   step: step > 0 ? step : undefined,
                   // The typed readout must stay parseable, so it ignores opts.format ('20 %').
                   format: numeric,
@@ -952,7 +953,7 @@ export function dropdown<T extends string>(parent: HTMLElement, opts: DropdownOp
     const fill = () => {
         el.empty();
         if (value && !options.some((o) => o.value === value)) {
-            el.createEl('option', { text: `${value} (missing)`, value, attr: { disabled: true } });
+            el.createEl('option', { text: t('editor.kit.missing', { value }), value, attr: { disabled: true } });
         }
         for (const o of options) el.createEl('option', { text: o.text, value: o.value });
         el.value = value;
@@ -1169,7 +1170,7 @@ function paintSwatch(dot: HTMLElement, key: string): void {
 
 /** Colour button that opens a popover grid of the palette. */
 export function swatchPicker(parent: HTMLElement, keys: KeyContext, opts: SwatchPickerOptions): SwatchPickerHandle {
-    const label = opts.label ?? 'Colour';
+    const label = opts.label ?? t('editor.kit.colour');
     const colors = opts.colors ?? Object.keys(COLOR_MAP);
     const el = parent.createEl('button', {
         cls: ['etz-swatch-btn'].concat(opts.cls ? [opts.cls] : []),
@@ -1181,7 +1182,7 @@ export function swatchPicker(parent: HTMLElement, keys: KeyContext, opts: Swatch
 
     const sync = () => {
         paintSwatch(dot, value);
-        el.setAttr('aria-label', `${label}: ${colorName(value)}`);
+        el.setAttr('aria-label', t('editor.kit.colourValue', { label, colour: colorName(value) }));
     };
     const choose = (key: string) => {
         if (current) current.close();
@@ -1276,7 +1277,7 @@ export interface ThicknessPickerOptions {
 /** Four line samples at their preview widths (1, 1.5, 2.5, 3.5 px), named by aria-label. */
 export function thicknessPicker(parent: HTMLElement, opts: ThicknessPickerOptions): SegmentedHandle<string> {
     return segmented<string>(parent, {
-        label: opts.label ?? 'Line thickness',
+        label: opts.label ?? t('editor.kit.lineThickness'),
         value: opts.value,
         onChange: opts.onChange,
         cls: ['etz-thickness'].concat(opts.cls ? [opts.cls] : []).join(' '),
@@ -1619,12 +1620,12 @@ export function cardShell(parent: HTMLElement, keys: KeyContext, opts: CardShell
     const summaryText = toggle.createSpan({ cls: 'etz-card-summary-text' });
     setIcon(toggle.createSpan({ cls: 'etz-card-chevron', attr: { 'aria-hidden': 'true' } }), 'chevron-down');
     const errorDot = headerEl.createSpan({ cls: ['etz-card-error-dot', 'tikz-hidden'] });
-    visuallyHidden(errorDot, 'Has an error');
+    visuallyHidden(errorDot, t('editor.kit.hasError'));
 
     const eye = opts.onVisibleChange
         ? iconButton(headerEl, {
               icon: 'eye',
-              label: 'Show in chart',
+              label: t('editor.kit.showInChart'),
               pressed: opts.visible !== false,
               cls: 'etz-card-eye',
               onClick: () => {
@@ -1635,7 +1636,7 @@ export function cardShell(parent: HTMLElement, keys: KeyContext, opts: CardShell
           })
         : null;
     if (opts.menu) {
-        const more = iconButton(headerEl, { icon: 'more-horizontal', label: 'More actions', cls: 'etz-card-more' });
+        const more = iconButton(headerEl, { icon: 'more-horizontal', label: t('common.moreActions'), cls: 'etz-card-more' });
         menuFromButton(more.el, opts.menu, 'end');
     }
 
@@ -1687,7 +1688,7 @@ export function cardShell(parent: HTMLElement, keys: KeyContext, opts: CardShell
         const { input, release, error } = editing;
         const next = input.value.trim();
         if (commitIt && next !== name) {
-            const problem = opts.validateName ? opts.validateName(next) : next ? null : 'Enter a name';
+            const problem = opts.validateName ? opts.validateName(next) : next ? null : t('common.enterName');
             if (problem) {
                 error.setText(problem);
                 error.removeClass('tikz-hidden');
@@ -1718,7 +1719,7 @@ export function cardShell(parent: HTMLElement, keys: KeyContext, opts: CardShell
             attr: { autocomplete: 'off', spellcheck: 'false', size: Math.max(4, name.length + 2) },
         });
         input.value = name;
-        nameBy(input, nameWrap, 'Name');
+        nameBy(input, nameWrap, t('common.name'));
         const error = nameWrap.createDiv({ cls: ['etz-card-name-error', 'tikz-hidden'], attr: { role: 'alert' } });
         const release = trapEscape(keys, () => endRename(false, true));
         editing = { input, release, error };
@@ -1738,7 +1739,7 @@ export function cardShell(parent: HTMLElement, keys: KeyContext, opts: CardShell
         input.addEventListener('blur', () => {
             if (!editing) return;
             const next = input.value.trim();
-            const problem = next === name ? null : opts.validateName ? opts.validateName(next) : next ? null : 'Enter a name';
+            const problem = next === name ? null : opts.validateName ? opts.validateName(next) : next ? null : t('common.enterName');
             endRename(!problem, false);
         });
         input.focus();
@@ -1836,8 +1837,8 @@ class TextPromptModal extends Modal {
         nameBy(input, contentEl, this.opts.title);
         const error = contentEl.createDiv({ cls: ['etz-dialog-error', 'tikz-hidden'], attr: { role: 'alert' } });
         const actions = contentEl.createDiv({ cls: 'etz-dialog-actions' });
-        textButton(actions, { text: 'Cancel', onClick: () => this.close() });
-        const submitBtn = textButton(actions, { text: this.opts.submitText ?? 'Save', variant: 'cta', onClick: () => submit() });
+        textButton(actions, { text: t('common.cancel'), onClick: () => this.close() });
+        const submitBtn = textButton(actions, { text: this.opts.submitText ?? t('common.save'), variant: 'cta', onClick: () => submit() });
 
         // Empty input is refused silently ('' problem); other problems are shown as you type.
         const problemOf = (v: string) => (v ? (this.opts.validate ? this.opts.validate(v) : null) : '');
@@ -1907,9 +1908,9 @@ class ConfirmModal extends Modal {
         this.titleEl.setText(this.opts.title);
         this.contentEl.createDiv({ cls: 'etz-dialog-desc', text: this.opts.message });
         const actions = this.contentEl.createDiv({ cls: 'etz-dialog-actions' });
-        textButton(actions, { text: this.opts.cancelText ?? 'Cancel', onClick: () => this.close() });
+        textButton(actions, { text: this.opts.cancelText ?? t('common.cancel'), onClick: () => this.close() });
         const ok = textButton(actions, {
-            text: this.opts.confirmText ?? 'OK',
+            text: this.opts.confirmText ?? t('editor.kit.ok'),
             variant: 'cta',
             cls: this.opts.destructive ? 'mod-destructive' : undefined,
             onClick: () => {

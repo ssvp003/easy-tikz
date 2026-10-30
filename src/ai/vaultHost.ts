@@ -2,7 +2,8 @@
  * The AI server's view of Obsidian (ChartHost of src/ai/mcp.ts): which note
  * is open, where a note named by an AI app lives, writing chart blocks into
  * notes (with a notice that offers Undo), and drawing a chart as a PNG the
- * way a note draws it.
+ * way a note draws it. Errors go to the AI app and stay English; the
+ * notices are for the person and in their language.
  */
 import { App, Notice, TFile, normalizePath } from 'obsidian';
 import type { ChartHost, NoteInfo } from './mcp';
@@ -12,6 +13,7 @@ import { SVGRenderer } from '../renderer';
 import { SVG3DRenderer } from '../renderer3d';
 import { MATH_REDRAW_LIMIT } from '../mathlabel';
 import { exportableSvg, svgToPng } from '../svgExport';
+import { inEnglish, t } from '../i18n';
 
 /** How long the notice about a change by an AI app stays (ms). */
 const NOTICE_MS = 10000;
@@ -90,15 +92,15 @@ export class VaultChartHost implements ChartHost {
     notify(message: string, path: string): void {
         const last = this.last && this.last.path === path ? this.last : null;
         const fragment = createFragment((f) => {
-            f.appendText(`Easy TikZ: ${message} to ${path}. `);
-            const open = f.createEl('a', { text: 'Open', href: '#' });
+            f.appendText(t('problems.ai.notice', { message }) + ' ');
+            const open = f.createEl('a', { text: t('common.open'), href: '#' });
             open.addEventListener('click', (e) => {
                 e.preventDefault();
                 void this.app.workspace.openLinkText(path, '', false);
             });
             if (last && last.before !== null) {
                 f.appendText(' · ');
-                const undo = f.createEl('a', { text: 'Undo', href: '#' });
+                const undo = f.createEl('a', { text: t('common.undo'), href: '#' });
                 undo.addEventListener('click', (e) => {
                     e.preventDefault();
                     void this.undo(last);
@@ -118,7 +120,7 @@ export class VaultChartHost implements ChartHost {
             undone = true;
             return change.before as string;
         });
-        new Notice(undone ? `Easy TikZ: undone in ${change.path}.` : `Easy TikZ: ${change.path} has changed since, so nothing was undone.`);
+        new Notice(t(undone ? 'problems.ai.undone' : 'problems.ai.notUndone', { path: change.path }));
     }
 
     async renderPng(chart: Data): Promise<string | null> {
@@ -148,7 +150,9 @@ export class VaultChartHost implements ChartHost {
             }
             if (!svg) return null;
             const background = getComputedStyle(doc.body).getPropertyValue('--background-primary').trim() || '#ffffff';
-            const png = await svgToPng(exportableSvg(svg, doc), 2, background);
+            const picture = exportableSvg(svg, doc);
+            // Its errors go to the AI app: written in English when the call starts.
+            const png = await inEnglish(() => svgToPng(picture, 2, background));
             return await pngData(png);
         } finally {
             stage.remove();

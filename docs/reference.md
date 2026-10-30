@@ -203,6 +203,7 @@ Guide: [Export to LaTeX](guides/export-latex.md) (standalone document or snippet
 
 Settings → Community plugins → **Easy TikZ**:
 
+- **Interface language.** Follow Obsidian (default), English or 日本語: menus, buttons, settings, messages and the guides in the Help tab. A language Easy TikZ does not have yet shows in English. Formulas, the chart language and the exported code stay as they are; command names change after Obsidian restarts.
 - **Write new charts as.** Text (default, one line per object in words) or JSON. A chart you edit keeps the form its block has.
 - **Chart colours.** From your theme (default: native colours that follow light and dark mode) or As in the LaTeX export (the fixed colours of the PDF). CSS snippets can set `--etz-red`, `--etz-blue`, ... directly.
 - **Chart under the block while you edit.** On by default: in Live Preview, a block you are editing shows its chart right under its lines, changing as you type.

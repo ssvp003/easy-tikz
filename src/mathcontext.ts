@@ -40,6 +40,7 @@ import {
     tokenize,
     topLevelColon,
 } from './expr';
+import { MessageKey, language, t as msg } from './i18n';
 
 export type FunctionKind = 'cartesian' | 'parametric' | 'polar';
 
@@ -124,6 +125,12 @@ export interface FunctionInfo {
     /** Parse error, unknown name, cycle, or 'depends on f1 (error)'. When set, `fn` returns NaN. */
     error?: string;
     /**
+     * Optional addition (translations): true when `error` is a reference
+     * cycle ('f1 refers to itself through f2'), so hosts can tell without
+     * reading the message, which is in the reader's language.
+     */
+    cycle?: boolean;
+    /**
      * Problem with the domain field at the current slider values (malformed,
      * unknown name, min >= max). `domain` is then null and `fn` returns NaN
      * everywhere, so nothing is drawn.
@@ -197,14 +204,14 @@ export const LABEL_LOCALS: {
 
 type FieldKind = 'fn1' | 'fn2' | 'value';
 
-/** Where each template local is provided (message for a placeholder used in another label). */
-const LOCAL_HOMES: Record<string, string> = {
-    x: 'point labels',
-    y: 'point labels',
-    val: 'point labels',
-    i: 'point labels',
-    z: '3D point labels',
-    level: 'curve labels',
+/** Where each template local is provided: the message for a placeholder used in another label. */
+const LOCAL_HOMES: Record<string, MessageKey> = {
+    x: 'problems.math.onlyInPointLabels',
+    y: 'problems.math.onlyInPointLabels',
+    val: 'problems.math.onlyInPointLabels',
+    i: 'problems.math.onlyInPointLabels',
+    z: 'problems.math.onlyIn3DPointLabels',
+    level: 'problems.math.onlyInCurveLabels',
 };
 
 const NUMERIC_LITERAL_RE = /^\s*[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\s*$/;
@@ -229,11 +236,25 @@ function asExprError(e: unknown): ExprError {
     return new ExprError(e instanceof Error ? e.message : String(e));
 }
 
-/** Copy of `e` with `prefix` added to its message (cached errors are shared, never mutate them). */
-function prefixed(e: unknown, prefix: string, index: number): ExprError {
+/**
+ * Copy of `e` with the item it is about (`where`: 'condition 2', 'point 1')
+ * in front of its message (cached errors are shared, never mutate them).
+ * src/issues.ts reads that prefix with the same template.
+ */
+function prefixed(e: unknown, where: string, index: number): ExprError {
     const err = asExprError(e);
     const Ctor = err instanceof NonFiniteError ? NonFiniteError : ExprError;
-    return new Ctor(`${prefix}: ${err.message}`, { pos: err.pos, unknown: err.unknown, fix: err.fix, index });
+    return new Ctor(msg('problems.issue.at', { where, message: err.message }), { pos: err.pos, unknown: err.unknown, fix: err.fix, index });
+}
+
+/** 'point 2' for the 0-based entry `i` of a point list. */
+function pointWhere(i: number): string {
+    return msg('problems.where.point', { n: i + 1 });
+}
+
+/** A message about the 0-based entry `i` of a point list: 'point 2: ...'. */
+function atPoint(i: number, message: string): string {
+    return msg('problems.issue.at', { where: pointWhere(i), message });
 }
 
 /** Error raised on a slice `full[offset, offset + len)`, re-based onto the full field text. */
@@ -315,6 +336,8 @@ interface FnRec {
     body: Compiled | null;
     bodyY: Compiled | null;
     error?: string;
+    /** The error is a reference cycle. */
+    cycle: boolean;
     /** Names of user functions this one reads (body and domain). */
     deps: string[];
     /** 0 = new, 1 = compiling, 2 = done. */
@@ -415,7 +438,7 @@ export class MathContext {
             if (axisNames.has(p.name)) {
                 // The name means the axis everywhere; the slider is reported instead of shadowing it.
                 if (!this.paramProblems.some((i) => i.source === p.name)) {
-                    this.paramProblems.push({ source: p.name, message: `${p.name} is an axis variable: rename the slider or the axis`, severity: 'error' });
+                    this.paramProblems.push({ source: p.name, message: msg('problems.math.sliderIsAxis', { name: p.name }), severity: 'error' });
                 }
                 continue;
             }
@@ -573,7 +596,7 @@ export class MathContext {
             try {
                 structure = this.conditionStructure(src);
             } catch (e) {
-                throw prefixed(e, `condition ${i + 1}`, i);
+                throw prefixed(e, msg('problems.where.condition', { n: i + 1 }), i);
             }
             out.push({
                 entry: i,
@@ -591,10 +614,10 @@ export class MathContext {
         let hit = this.eqMemo.get(s);
         if (!hit) {
             try {
-                if (!s.trim()) throw new ExprError('Enter an equation, e.g. 2x + 3y = 12', { pos: 0 });
+                if (!s.trim()) throw new ExprError(msg('problems.math.enterEquation'), { pos: 0 });
                 const ast = parse(s, 'eq');
                 if (ast.t === 'cmp' || ast.t === 'logic') {
-                    throw new ExprError('Use = in an equation (inequalities belong in a region)', { pos: ast.s });
+                    throw new ExprError(msg('problems.math.equalsInEquation'), { pos: ast.s });
                 }
                 const env = this.env('fn2', 'cartesian', null);
                 hit = { F: compile(ast, env, s), plan: linearPlan(ast, env) };
@@ -650,7 +673,7 @@ export class MathContext {
                     try {
                         return compile(node, env, s);
                     } catch (e) {
-                        throw prefixed(e, `value ${i + 1}`, i);
+                        throw prefixed(e, msg('problems.where.value', { n: i + 1 }), i);
                     }
                 });
             } catch (e) {
@@ -661,7 +684,7 @@ export class MathContext {
         if (fs instanceof ExprError) throw fs;
         return fs.map((f, i) => {
             const v = f(NaN, NaN);
-            if (!Number.isFinite(v)) throw new NonFiniteError(`value ${i + 1} is not a finite number`, { index: i });
+            if (!Number.isFinite(v)) throw new NonFiniteError(msg('problems.math.valueNotFinite', { n: i + 1 }), { index: i });
             return v;
         });
     }
@@ -687,7 +710,7 @@ export class MathContext {
      */
     tuples(src: string, dim: 2 | 3): number[][] {
         return this.pointList(str(src), dim, false).map((e) => {
-            if ('name' in e) throw new ExprError('Write a point as (x, y)');
+            if ('name' in e) throw new ExprError(msg('problems.expr.writePoint'));
             return e.point;
         });
     }
@@ -915,41 +938,41 @@ export class MathContext {
 
     private strictValue(src: string | number | null | undefined): number {
         if (typeof src === 'number') {
-            if (!Number.isFinite(src)) throw new NonFiniteError('Not a finite number');
+            if (!Number.isFinite(src)) throw new NonFiniteError(msg('problems.math.notFinite'));
             return src;
         }
         const s = str(src);
-        if (!s.trim()) throw new ExprError('Enter a value', { pos: 0 });
+        if (!s.trim()) throw new ExprError(msg('problems.math.enterValue'), { pos: 0 });
         if (NUMERIC_LITERAL_RE.test(s)) {
             const n = Number(s);
-            if (!Number.isFinite(n)) throw new NonFiniteError(`${shortText(s)} is not a finite number`, { pos: 0 });
+            if (!Number.isFinite(n)) throw new NonFiniteError(msg('problems.math.textNotFinite', { text: shortText(s) }), { pos: 0 });
             return n;
         }
         const v = this.compileField('value', 'cartesian', s, null)(NaN, NaN);
-        if (!Number.isFinite(v)) throw new NonFiniteError(`${shortText(s)} is not a finite number`, { pos: 0 });
+        if (!Number.isFinite(v)) throw new NonFiniteError(msg('problems.math.textNotFinite', { text: shortText(s) }), { pos: 0 });
         return v;
     }
 
     private strictDomain(s: string): [number, number] {
-        if (!s.trim()) throw new ExprError('Domain is empty', { pos: 0 });
+        if (!s.trim()) throw new ExprError(msg('problems.math.domainEmpty'), { pos: 0 });
         const colon = topLevelColon(s);
         if (colon === null) {
             tokenize(s);
-            throw new ExprError('Write the domain as min:max, e.g. -5:5', { pos: 0 });
+            throw new ExprError(msg('problems.math.writeDomain'), { pos: 0 });
         }
-        if (colon < 0) throw new ExprError('Write the domain as min:max, e.g. -5:5', { pos: 0 });
+        if (colon < 0) throw new ExprError(msg('problems.math.writeDomain'), { pos: 0 });
         const lo = this.bound(s, 0, colon, 'min');
         const hi = this.bound(s, colon + 1, s.length, 'max');
-        if (!(lo < hi)) throw new ExprError('Domain min must be less than max', { pos: 0 });
+        if (!(lo < hi)) throw new ExprError(msg('problems.math.domainOrder'), { pos: 0 });
         return [lo, hi];
     }
 
     private bound(full: string, start: number, end: number, which: 'min' | 'max'): number {
         const part = full.slice(start, end);
-        if (!part.trim()) throw new ExprError(`Domain ${which} is missing`, { pos: start });
+        if (!part.trim()) throw new ExprError(msg('problems.math.domainBoundMissing', { which }), { pos: start });
         if (NUMERIC_LITERAL_RE.test(part)) {
             const n = Number(part);
-            if (!Number.isFinite(n)) throw new NonFiniteError(`Domain ${which} is not a finite number`, { pos: start });
+            if (!Number.isFinite(n)) throw new NonFiniteError(msg('problems.math.domainBoundNotFinite', { which }), { pos: start });
             return n;
         }
         let f: Compiled;
@@ -959,7 +982,7 @@ export class MathContext {
             throw relocate(e, full, start, part.length);
         }
         const v = f(NaN, NaN);
-        if (!Number.isFinite(v)) throw new NonFiniteError(`Domain ${which} is not a finite number`, { pos: start });
+        if (!Number.isFinite(v)) throw new NonFiniteError(msg('problems.math.domainBoundNotFinite', { which }), { pos: start });
         return v;
     }
 
@@ -970,28 +993,35 @@ export class MathContext {
         if (!st) {
             try {
                 const env = this.env('value', 'cartesian', null);
-                st = parseTuples(s, names).map((item: TupleItem, i) => {
+                let items: TupleItem[];
+                try {
+                    items = parseTuples(s, names);
+                } catch (e) {
+                    // The parser names the entry by index only; the entries below name it in their messages.
+                    const err = asExprError(e);
+                    throw err.index !== undefined ? prefixed(err, pointWhere(err.index), err.index) : err;
+                }
+                st = items.map((item: TupleItem, i) => {
                     if (item.kind === 'name') {
                         if (!this.toolSet.has(item.name)) {
-                            throw new ExprError(`point ${i + 1}: '${item.name}' is not a points tool`, { pos: item.s, index: i });
+                            throw new ExprError(atPoint(i, msg('problems.math.notPointsTool', { name: item.name })), { pos: item.s, index: i });
                         }
                         return item.name;
                     }
                     if (item.items.length !== dim) {
                         const shape = dim === 2 ? '(x, y)' : '(x, y, z)';
-                        throw new ExprError(`point ${i + 1}: write it as ${shape}`, { pos: item.s, index: i });
+                        throw new ExprError(atPoint(i, msg('problems.math.writePointAs', { shape })), { pos: item.s, index: i });
                     }
                     return item.items.map((node) => {
                         try {
                             return compile(node, env, s);
                         } catch (e) {
-                            throw prefixed(e, `point ${i + 1}`, i);
+                            throw prefixed(e, pointWhere(i), i);
                         }
                     });
                 });
             } catch (e) {
-                const err = asExprError(e);
-                st = err.index !== undefined && !/^point \d+:/.test(err.message) ? prefixed(err, `point ${err.index + 1}`, err.index) : err;
+                st = asExprError(e);
             }
             this.tupleMemo.set(key, st);
         }
@@ -1002,7 +1032,7 @@ export class MathContext {
                 point: entry.map((f, j) => {
                     const v = f(NaN, NaN);
                     if (!Number.isFinite(v)) {
-                        throw new NonFiniteError(`point ${i + 1}: coordinate ${j + 1} is not a finite number`, { index: i });
+                        throw new NonFiniteError(atPoint(i, msg('problems.math.coordinateNotFinite', { n: j + 1 })), { index: i });
                     }
                     return v;
                 }),
@@ -1015,7 +1045,7 @@ export class MathContext {
         if (scanned.error) throw new ExprError(scanned.error.message, { pos: scanned.error.pos });
         for (const part of scanned.parts) {
             if (part.kind !== 'expr') continue;
-            if (!part.expr.trim()) throw new ExprError('Empty {} in the label', { pos: part.offset - 1 });
+            if (!part.expr.trim()) throw new ExprError(msg('problems.math.emptyPlaceholder'), { pos: part.offset - 1 });
             try {
                 this.compileField('value', 'cartesian', part.expr, names);
             } catch (e) {
@@ -1034,7 +1064,7 @@ export class MathContext {
         const token = (identifierTokens(expr) || []).find((t) => t.pos === err.pos);
         if (!token || !Object.prototype.hasOwnProperty.call(LOCAL_HOMES, token.text)) return e;
         if ((names && names.includes(token.text)) || this.paramIndex.has(token.text)) return e;
-        return new ExprError(`{${token.text}} is only available in ${LOCAL_HOMES[token.text]}`, { pos: token.pos });
+        return new ExprError(msg(LOCAL_HOMES[token.text], { placeholder: `{${token.text}}` }), { pos: token.pos });
     }
 
     private conditionStructure(src: string): CompiledClause[][] {
@@ -1157,12 +1187,14 @@ export class MathContext {
         const localSet = new Set(locals || []);
         const scalars = new Map<string, Scalar | null>();
         const [v1, v2] = this.vars;
-        let hint: string;
-        if (field === 'value') hint = 'this field takes a number';
-        else if (field === 'fn2') hint = `use ${v1} and ${v2}`;
-        else if (fnKind === 'parametric') hint = 'x(t) and y(t) use t only';
-        else if (fnKind === 'polar') hint = 'r(theta) uses theta only';
-        else hint = `f(${v1}) uses ${v1} only`;
+        /** What this kind of field takes, for 'x is not available here: ...'. */
+        const hint = (): string => {
+            if (field === 'value') return msg('problems.math.hintNumber');
+            if (field === 'fn2') return msg('problems.math.hintTwoVariables', { first: v1, second: v2 });
+            if (fnKind === 'parametric') return msg('problems.math.hintParametric');
+            if (fnKind === 'polar') return msg('problems.math.hintPolar');
+            return msg('problems.math.hintOneVariable', { variable: v1 });
+        };
         /** `P1_q`: the tool part names an existing tool. */
         const toolPart = (name: string): string | null => {
             const m = /^(.+)_[A-Za-z0-9]+$/.exec(name);
@@ -1197,15 +1229,15 @@ export class MathContext {
                 return rec ? rec.ref : null;
             },
             bareFnError: (name: string): string | null => {
-                if (field === 'value') return `${name} needs an argument here, e.g. ${name}(1)`;
-                if (field === 'fn2' && this.polar) return `${name} needs an argument here, e.g. ${name}(theta)`;
+                if (field === 'value') return msg('problems.math.needsArgument', { name, argument: '1' });
+                if (field === 'fn2' && this.polar) return msg('problems.math.needsArgument', { name, argument: 'theta' });
                 return null;
             },
             notHere: (name: string): string | null => {
-                if (this.allVariableNames.has(name) && !usable.has(name)) return `${name} is not available here: ${hint}`;
-                if (this.toolSet.has(name)) return `'${name}' is a tool: use ${name}_x, ${name}_y or ${name}_val`;
+                if (this.allVariableNames.has(name) && !usable.has(name)) return msg('problems.math.notAvailable', { name, hint: hint() });
+                if (this.toolSet.has(name)) return msg('problems.math.toolAsValue', { name });
                 const tool = toolPart(name);
-                if (tool) return `Unknown name '${name}' (${tool} provides ${tool}_x, ${tool}_y, ${tool}_z, ${tool}_val, ${tool}_n)`;
+                if (tool) return msg('problems.math.unknownToolValue', { name, tool });
                 return null;
             },
             noSlider: (name: string): boolean => this.toolSet.has(name) || toolPart(name) !== null,
@@ -1223,22 +1255,22 @@ export class MathContext {
             const rec = this.makeRec(name, index, kind, f);
             this.recs.push(rec);
             // Variables, sliders and builtins resolve before functions, so a clash would silently lose.
-            if (isReservedName(name) || this.allVariableNames.has(name)) rec.error = `${name} is a reserved name`;
-            else if (this.paramIndex.has(name)) rec.error = `${name} is also a slider name`;
+            if (isReservedName(name) || this.allVariableNames.has(name)) rec.error = msg('problems.math.reservedName', { name });
+            else if (this.paramIndex.has(name)) rec.error = msg('problems.math.alsoSliderName', { name });
             else if (!this.byName.has(name)) this.byName.set(name, rec);
-            else rec.error = `Another function is already named ${name}`;
+            else rec.error = msg('problems.math.duplicateFunction', { name });
         });
         // Parse and collect references (bodies and domains).
         for (const rec of this.recs) {
             const refs = new Set<string>();
             try {
                 if (!rec.expression.trim()) {
-                    throw new ExprError(rec.kind === 'parametric' ? 'Enter x(t)' : 'Enter an expression');
+                    throw new ExprError(rec.kind === 'parametric' ? msg('problems.math.enterPart', { part: 'x(t)' }) : msg('problems.expr.enterExpression'));
                 }
                 rec.ast = parse(rec.expression);
                 identifiers(rec.ast, refs);
                 if (rec.kind === 'parametric') {
-                    if (!rec.expressionY.trim()) throw new ExprError('Enter y(t)');
+                    if (!rec.expressionY.trim()) throw new ExprError(msg('problems.math.enterPart', { part: 'y(t)' }));
                     rec.astY = parse(rec.expressionY);
                     identifiers(rec.astY, refs);
                 }
@@ -1267,6 +1299,7 @@ export class MathContext {
             astY: null,
             body: null,
             bodyY: null,
+            cycle: false,
             deps: [],
             state: 0,
             domVersion: -1,
@@ -1317,6 +1350,9 @@ export class MathContext {
             hidden: rec.hidden,
             get error() {
                 return rec.error;
+            },
+            get cycle() {
+                return rec.cycle;
             },
             get domainError() {
                 resolve();
@@ -1390,7 +1426,10 @@ export class MathContext {
                 if (comp.length === 1 && !rec.deps.includes(rec.name)) continue;
                 if (rec.error) continue;
                 const through = cyclePath(rec, members, this.byName);
-                rec.error = through.length ? `${rec.name} refers to itself through ${through.join(', ')}` : `${rec.name} refers to itself`;
+                rec.cycle = true;
+                rec.error = through.length
+                    ? msg('problems.math.selfReferenceThrough', { name: rec.name, through: through.join(', ') })
+                    : msg('problems.math.selfReference', { name: rec.name });
             }
         }
     }
@@ -1460,7 +1499,7 @@ function toDnf(n: Node, neg: boolean, src: string): RawClause[][] {
             } else {
                 out = l.concat(r);
             }
-            if (out.length > MAX_DISJUNCTS) throw new ExprError('This condition is too complex', { pos: n.s });
+            if (out.length > MAX_DISJUNCTS) throw new ExprError(msg('problems.math.conditionTooComplex'), { pos: n.s });
             return out;
         }
         case 'unary':
@@ -1473,11 +1512,11 @@ function toDnf(n: Node, neg: boolean, src: string): RawClause[][] {
         default:
             break;
     }
-    throw new ExprError(`'${shortText(src.slice(n.s, n.e))}' is not a condition: use <= or >=`, { pos: n.s });
+    throw new ExprError(msg('problems.math.notACondition', { text: shortText(src.slice(n.s, n.e)) }), { pos: n.s });
 }
 
 function clause(lhs: Node, op: CmpOp, rhs: Node, neg: boolean, pos: number): RawClause {
-    if (op === '==' || op === '!=') throw new ExprError('Use <= or >= in a condition, not == or !=', { pos });
+    if (op === '==' || op === '!=') throw new ExprError(msg('problems.math.compareInCondition'), { pos });
     return { lhs, rhs, op: neg ? NEGATED[op] : op };
 }
 
@@ -1505,7 +1544,9 @@ function structureKey(input: MathContextInput): string {
         if (!f || typeof f !== 'object') return null;
         return [f.name || `f${i + 1}`, str(f.expression), str(f.expressionY), str(f.domain), !!f.parametric, !!f.hidden];
     });
+    // A context keeps its problem messages (memos, function errors): one per language.
     return JSON.stringify([
+        language(),
         (Array.isArray(input.parameters) ? input.parameters : []).map((p) => (p ? p.name : null)),
         fns,
         !!input.polar,

@@ -3,6 +3,7 @@ import { LABEL_LOCALS, MathContext, labelDisplayText } from './mathcontext';
 import { ArrowHeads, Scene3D, SceneIssue, computeScene3D, edgeLabelSide3D } from './scene';
 import { COLOR_MAP, THICKNESS_MAP, resolveCssColor } from './colors';
 import { niceInterval, formatTick, stripLatex, hexToRgb, rgbStringToRgb } from './util';
+import { t as msg } from './i18n';
 
 
 const PADDING_TOP = 40;
@@ -322,7 +323,7 @@ export class SVG3DRenderer {
 
         this.canvas = createEl('canvas', { cls: 'tikz-3d-canvas' });
         const ctx = this.canvas.getContext('2d');
-        if (!ctx) throw new Error('Canvas 2D context unavailable');
+        if (!ctx) throw new Error(msg('problems.render.noCanvas'));
         this.ctx = ctx;
 
         this.root.appendChild(this.svg);
@@ -580,7 +581,7 @@ export class SVG3DRenderer {
                 },
             });
         } catch (e) {
-            this.issues.push({ source: 'chart', message: `Shapes could not be drawn: ${errorMessage(e)}`, severity: 'error' });
+            this.issues.push({ source: 'chart', message: msg('problems.render.shapesNotDrawn', { error: errorMessage(e) }), severity: 'error' });
             return NO_TOOLS;
         }
         // The scene publishes derived values itself; repeating it is a no-op
@@ -609,7 +610,7 @@ export class SVG3DRenderer {
                 continue;
             }
             // Same fallback name as the editor's status chip uses for unnamed surfaces.
-            const source = func.name || `Surface ${i + 1}`;
+            const source = func.name || msg('problems.render.surface', { n: i + 1 });
             let fn: (x: number, y: number) => number;
             try {
                 fn = math.fn2(func.expression);
@@ -1082,7 +1083,7 @@ export class SVG3DRenderer {
                 const v = math.value(src);
                 if (Number.isFinite(v)) return v;
                 const res = math.tryValue(src);
-                this.issues.push({ source, field, message: res.ok ? 'Not a finite number' : res.message, severity: 'error' });
+                this.issues.push({ source, field, message: res.ok ? msg('problems.math.notFinite') : res.message, severity: 'error' });
                 return NaN;
             };
             const x = coord(a.x, 'x');

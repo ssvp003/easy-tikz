@@ -667,6 +667,49 @@ if (started) {
             await obs.setTheme('light');
         });
 
+        await check('Japanese: the editor, a note\'s problem line and the settings speak Japanese, and the chart language stays English', async () => {
+            const japanese = /[぀-ヿ一-龯]/;
+            const setLanguage = async (value) => {
+                fs.writeFileSync(dataFile(), JSON.stringify({ ...(readData() || {}), interfaceLanguage: value }, null, 2));
+                await reloadPlugin();
+            };
+            await setLanguage('ja');
+            try {
+                await obs.openEditor({ chart: lp.data });
+                const ui = await obs.call(() => {
+                    const m = window.__etzMedia.requireEditor().modalEl;
+                    return {
+                        tabs: Array.from(m.querySelectorAll('.etz-tab .etz-tab-text')).map((t) => (t.textContent || '').trim()),
+                        buttons: Array.from(m.querySelectorAll('button')).map((b) => (b.textContent || '').trim()).filter(Boolean),
+                    };
+                });
+                assert(ui.tabs.includes('作成') && ui.tabs.includes('ヘルプ'), `tab labels: ${ui.tabs.join(', ')}`);
+                assert(ui.buttons.includes('ノートに挿入'), `no button ノートに挿入 among: ${ui.buttons.slice(0, 12).join(', ')}`);
+                assert((await obs.issues()).length === 0, 'the Linear program example has issues in Japanese');
+                await obs.closeEditor();
+                // A block in the chart language draws as in English; only what the plugin says about it is Japanese.
+                await obs.writeNote('Japanese note', textBlock(handWritten));
+                await obs.openNote('Japanese note', { mode: 'reading' });
+                const charts = await obs.noteCharts();
+                assert(charts.length === 1 && charts[0].drawn, `rendered charts: ${JSON.stringify(charts)}`);
+                const problem = charts[0].issues || '';
+                assert(japanese.test(problem) && problem.includes('sparkly') && !/unknown option/.test(problem), `problem line: "${problem}"`);
+                // What the settings show: the definitions the plugin gives Obsidian's settings window.
+                const settings = await obs.call((id) => {
+                    const tab = (app.setting.pluginTabs || []).find((t) => t.id === id);
+                    return tab && typeof tab.getSettingDefinitions === 'function' ? JSON.stringify(tab.getSettingDefinitions()) : '';
+                }, PLUGIN_ID);
+                assert(settings.includes('表示言語') && settings.includes('グラフの色'), `the settings do not show 表示言語 and グラフの色: ${settings.slice(0, 160)}`);
+                return problem;
+            } finally {
+                await setLanguage('auto');
+                await obs.openEditor({ chart: lp.data });
+                const tab = await obs.call(() => (window.__etzMedia.requireEditor().modalEl.querySelector('.etz-tab.is-active .etz-tab-text') || { textContent: '' }).textContent.trim());
+                await obs.closeEditor();
+                assert(tab === 'Build', `back in English the first tab says "${tab}"`);
+            }
+        });
+
         // "What's new": who sees it, once, and what it does. Obsidian reloads a plugin after an update,
         // so each case writes data.json as that user would have it and reloads the plugin.
         const version = WHATS_NEW ? WHATS_NEW.WHATS_NEW_VERSION : null;

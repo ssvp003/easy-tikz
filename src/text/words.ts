@@ -13,6 +13,7 @@
  * their line as written. Pure, so the parser, the printer, the settings and
  * the tests share it.
  */
+import { MessageKey, t } from '../i18n';
 
 export type WordGroup = 'lines' | 'phrases' | 'options' | 'colours';
 
@@ -22,103 +23,109 @@ export interface Piece {
     /** The built-in words the parser reads. */
     builtin: string;
     group: WordGroup;
-    /** What it is, for the settings. */
-    what: string;
+    /** What it is, for the settings: the key of its description, shown with t() (the language is set after this module loads). */
+    what: MessageKey;
     /** This piece only stands before a colour (`in red`); the same built-in word elsewhere is another piece. */
     beforeColour?: boolean;
     /** A word at the start of a line whose rest stays as written (`title Production plan`). */
     keepsRest?: boolean;
 }
 
-const piece = (id: string, builtin: string, group: WordGroup, what: string, extra: Partial<Piece> = {}): Piece => ({ id, builtin, group, what, ...extra });
+const piece = (id: string, builtin: string, group: WordGroup, what: MessageKey, extra: Partial<Piece> = {}): Piece => ({ id, builtin, group, what, ...extra });
 
 /** The pieces, by group, in the order the settings show them. */
 export const PIECES: readonly Piece[] = [
-    piece('show', 'show', 'lines', 'Which part of the plane shows: show x from 0 to 5 and y from 0 to 4'),
-    piece('size', 'size', 'lines', 'Size of the figure in cm: size 12 x 6', { keepsRest: true }),
-    piece('axes', 'axes', 'lines', 'The axes: axes on the edges'),
-    piece('on-the-edges', 'on the edges', 'lines', 'Axes along the edges'),
-    piece('in-the-middle', 'in the middle', 'lines', 'Axes through the origin'),
-    piece('in-a-box', 'in a box', 'lines', 'A frame with ticks'),
-    piece('no-axes', 'no axes', 'lines', 'No axes'),
-    piece('with-a-grid', 'with a grid', 'lines', 'A grid'),
-    piece('with-a-fine-grid', 'with a fine grid', 'lines', 'A grid with minor lines too'),
-    piece('equal-scale', 'equal scale', 'lines', 'The same unit on both axes'),
-    piece('title', 'title', 'lines', 'A title over the chart', { keepsRest: true }),
-    piece('xlabel', 'xlabel', 'lines', 'The name of the x-axis', { keepsRest: true }),
-    piece('ylabel', 'ylabel', 'lines', 'The name of the y-axis', { keepsRest: true }),
-    piece('slider', 'slider', 'lines', 'A slider: slider c from 0 to 15, starting at 6'),
-    piece('plot', 'plot', 'lines', 'A function: plot f(x) = x^2'),
-    piece('shade', 'shade', 'lines', 'A shaded region: shade where x + y <= 4'),
-    piece('draw', 'draw', 'lines', 'A curve or a shape: draw 2x + 3y = 12'),
-    piece('mark', 'mark', 'lines', 'Points: mark (1, 2) and (3, 4)'),
-    piece('write', 'write', 'lines', 'A text label: write "optimum" at (3, 1)'),
+    piece('show', 'show', 'lines', 'panels.words.what.show'),
+    piece('size', 'size', 'lines', 'panels.words.what.size', { keepsRest: true }),
+    piece('axes', 'axes', 'lines', 'panels.words.what.axes'),
+    piece('on-the-edges', 'on the edges', 'lines', 'panels.words.what.onTheEdges'),
+    piece('in-the-middle', 'in the middle', 'lines', 'panels.words.what.inTheMiddle'),
+    piece('in-a-box', 'in a box', 'lines', 'panels.words.what.inABox'),
+    piece('no-axes', 'no axes', 'lines', 'panels.words.what.noAxes'),
+    piece('with-a-grid', 'with a grid', 'lines', 'panels.words.what.withAGrid'),
+    piece('with-a-fine-grid', 'with a fine grid', 'lines', 'panels.words.what.withAFineGrid'),
+    piece('equal-scale', 'equal scale', 'lines', 'panels.words.what.equalScale'),
+    piece('title', 'title', 'lines', 'panels.words.what.title', { keepsRest: true }),
+    piece('xlabel', 'xlabel', 'lines', 'panels.words.what.xlabel', { keepsRest: true }),
+    piece('ylabel', 'ylabel', 'lines', 'panels.words.what.ylabel', { keepsRest: true }),
+    piece('slider', 'slider', 'lines', 'panels.words.what.slider'),
+    piece('plot', 'plot', 'lines', 'panels.words.what.plot'),
+    piece('shade', 'shade', 'lines', 'panels.words.what.shade'),
+    piece('draw', 'draw', 'lines', 'panels.words.what.draw'),
+    piece('mark', 'mark', 'lines', 'panels.words.what.mark'),
+    piece('write', 'write', 'lines', 'panels.words.what.write'),
 
-    piece('from', 'from', 'phrases', 'Start of a range or a path'),
-    piece('to', 'to', 'phrases', 'End of a range or a path'),
-    piece('and', 'and', 'phrases', 'Joins ranges, conditions, points and options'),
-    piece('where', 'where', 'phrases', 'The conditions of a region: shade where ...'),
-    piece('between', 'between', 'phrases', 'A region between two functions'),
-    piece('under', 'under', 'phrases', 'A region under a function'),
-    piece('starting-at', 'starting at', 'phrases', 'Where a slider starts'),
-    piece('in-steps-of', 'in steps of', 'phrases', 'The step of a slider'),
-    piece('the-maximum-of', 'the maximum of', 'phrases', 'The highest point of a region: mark the maximum of 2x + 3y in R1'),
-    piece('the-minimum-of', 'the minimum of', 'phrases', 'The lowest point of a region'),
-    piece('the-corners-of', 'the corners of', 'phrases', 'The corners of a region'),
-    piece('cross', 'cross', 'phrases', 'Where two curves cross: mark where f and g cross'),
-    piece('the-integer-points-in', 'the integer points in', 'phrases', 'The whole-number points of a region'),
-    piece('the-integer-maximum-of', 'the integer maximum of', 'phrases', 'The best whole-number point of a region'),
-    piece('in-the-region', 'in the region', 'phrases', 'In the chart’s only region'),
-    piece('the-region', 'the region', 'phrases', 'The chart’s only region'),
-    piece('in-region', 'in', 'phrases', 'In a region: mark the corners of R1, the maximum of ... in R1'),
-    piece('an-arrow', 'an arrow', 'phrases', 'An arrow: draw an arrow from (0, 0) to (3, 2)'),
-    piece('a-double-arrow', 'a double arrow', 'phrases', 'An arrow with two heads'),
-    piece('a-line', 'a line', 'phrases', 'A path through points: draw a line from A to B'),
-    piece('a-polygon-through', 'a polygon through', 'phrases', 'A closed path'),
-    piece('a-brace', 'a brace', 'phrases', 'A curly brace: draw a brace from A to B'),
-    piece('the-plane', 'the plane', 'phrases', 'A plane in 3D: draw the plane z = 2'),
-    piece('the-level-curves-of', 'the level curves of', 'phrases', 'Level curves: draw the level curves of x^2 + y^2 at 1 and 4'),
-    piece('at', 'at', 'phrases', 'Where a text label goes, or the values of level curves'),
+    piece('from', 'from', 'phrases', 'panels.words.what.from'),
+    piece('to', 'to', 'phrases', 'panels.words.what.to'),
+    piece('and', 'and', 'phrases', 'panels.words.what.and'),
+    piece('where', 'where', 'phrases', 'panels.words.what.where'),
+    piece('between', 'between', 'phrases', 'panels.words.what.between'),
+    piece('under', 'under', 'phrases', 'panels.words.what.under'),
+    piece('starting-at', 'starting at', 'phrases', 'panels.words.what.startingAt'),
+    piece('in-steps-of', 'in steps of', 'phrases', 'panels.words.what.inStepsOf'),
+    piece('the-maximum-of', 'the maximum of', 'phrases', 'panels.words.what.theMaximumOf'),
+    piece('the-minimum-of', 'the minimum of', 'phrases', 'panels.words.what.theMinimumOf'),
+    piece('the-corners-of', 'the corners of', 'phrases', 'panels.words.what.theCornersOf'),
+    piece('cross', 'cross', 'phrases', 'panels.words.what.cross'),
+    piece('the-integer-points-in', 'the integer points in', 'phrases', 'panels.words.what.theIntegerPointsIn'),
+    piece('the-integer-maximum-of', 'the integer maximum of', 'phrases', 'panels.words.what.theIntegerMaximumOf'),
+    piece('in-the-region', 'in the region', 'phrases', 'panels.words.what.inTheRegion'),
+    piece('the-region', 'the region', 'phrases', 'panels.words.what.theRegion'),
+    piece('in-region', 'in', 'phrases', 'panels.words.what.inRegion'),
+    piece('an-arrow', 'an arrow', 'phrases', 'panels.words.what.anArrow'),
+    piece('a-double-arrow', 'a double arrow', 'phrases', 'panels.words.what.aDoubleArrow'),
+    piece('a-line', 'a line', 'phrases', 'panels.words.what.aLine'),
+    piece('a-polygon-through', 'a polygon through', 'phrases', 'panels.words.what.aPolygonThrough'),
+    piece('a-brace', 'a brace', 'phrases', 'panels.words.what.aBrace'),
+    piece('the-plane', 'the plane', 'phrases', 'panels.words.what.thePlane'),
+    piece('the-level-curves-of', 'the level curves of', 'phrases', 'panels.words.what.theLevelCurvesOf'),
+    piece('at', 'at', 'phrases', 'panels.words.what.at'),
 
-    piece('in-colour', 'in', 'options', 'Before a colour: in red', { beforeColour: true }),
-    piece('dashed', 'dashed', 'options', 'Dashed'),
-    piece('thick', 'thick', 'options', 'Thick'),
-    piece('thin', 'thin', 'options', 'Thin'),
-    piece('very-thick', 'very thick', 'options', 'Very thick'),
-    piece('very-thin', 'very thin', 'options', 'Very thin'),
-    piece('hidden', 'hidden', 'options', 'Not drawn, still usable by name'),
-    piece('numbered', 'numbered', 'options', 'Constraint lines numbered (1), (2), ...'),
-    piece('with-constraint-lines', 'with constraint lines', 'options', 'Each condition’s boundary across the view'),
-    piece('outlined', 'outlined', 'options', 'A region’s border'),
-    piece('with-a-dashed-outline', 'with a dashed outline', 'options', 'A dashed border'),
-    piece('not-filled', 'not filled', 'options', 'A region without fill'),
-    piece('filled', 'filled', 'options', 'A function filled to the x-axis'),
-    piece('with-its-tangent-at', 'with its tangent at', 'options', 'A tangent: with its tangent at a'),
-    piece('with-its-extrema', 'with its extrema', 'options', 'Highs and lows marked'),
-    piece('with-a-legend', 'with a legend', 'options', 'A legend entry'),
-    piece('with-the-legend', 'with the legend', 'options', 'A legend entry with its text: with the legend "Demand"'),
-    piece('labelled', 'labelled', 'options', 'A label in quotes: labelled "z = {c}"'),
-    piece('large', 'large', 'options', 'Large points or text'),
-    piece('small', 'small', 'options', 'Small points or text'),
-    piece('with-coordinates', 'with coordinates', 'options', 'Each point’s coordinates'),
-    piece('with-lines-to-the-axes', 'with lines to the axes', 'options', 'Dashed guides from points to the axes'),
-    piece('backwards', 'backwards', 'options', 'An arrow head at the start'),
-    piece('above', 'above', 'options', 'A text label above its point'),
-    piece('below', 'below', 'options', 'A text label below its point'),
+    piece('in-colour', 'in', 'options', 'panels.words.what.inColour', { beforeColour: true }),
+    piece('dashed', 'dashed', 'options', 'panels.words.what.dashed'),
+    piece('thick', 'thick', 'options', 'panels.words.what.thick'),
+    piece('thin', 'thin', 'options', 'panels.words.what.thin'),
+    piece('very-thick', 'very thick', 'options', 'panels.words.what.veryThick'),
+    piece('very-thin', 'very thin', 'options', 'panels.words.what.veryThin'),
+    piece('hidden', 'hidden', 'options', 'panels.words.what.hidden'),
+    piece('numbered', 'numbered', 'options', 'panels.words.what.numbered'),
+    piece('with-constraint-lines', 'with constraint lines', 'options', 'panels.words.what.withConstraintLines'),
+    piece('outlined', 'outlined', 'options', 'panels.words.what.outlined'),
+    piece('with-a-dashed-outline', 'with a dashed outline', 'options', 'panels.words.what.withADashedOutline'),
+    piece('not-filled', 'not filled', 'options', 'panels.words.what.notFilled'),
+    piece('filled', 'filled', 'options', 'panels.words.what.filled'),
+    piece('with-its-tangent-at', 'with its tangent at', 'options', 'panels.words.what.withItsTangentAt'),
+    piece('with-its-extrema', 'with its extrema', 'options', 'panels.words.what.withItsExtrema'),
+    piece('with-a-legend', 'with a legend', 'options', 'panels.words.what.withALegend'),
+    piece('with-the-legend', 'with the legend', 'options', 'panels.words.what.withTheLegend'),
+    piece('labelled', 'labelled', 'options', 'panels.words.what.labelled'),
+    piece('large', 'large', 'options', 'panels.words.what.large'),
+    piece('small', 'small', 'options', 'panels.words.what.small'),
+    piece('with-coordinates', 'with coordinates', 'options', 'panels.words.what.withCoordinates'),
+    piece('with-lines-to-the-axes', 'with lines to the axes', 'options', 'panels.words.what.withLinesToTheAxes'),
+    piece('backwards', 'backwards', 'options', 'panels.words.what.backwards'),
+    piece('above', 'above', 'options', 'panels.words.what.above'),
+    piece('below', 'below', 'options', 'panels.words.what.below'),
 
-    piece('red', 'red', 'colours', 'Red'),
-    piece('blue', 'blue', 'colours', 'Blue'),
-    piece('green', 'green', 'colours', 'Green'),
-    piece('orange', 'orange', 'colours', 'Orange'),
-    piece('purple', 'purple', 'colours', 'Purple'),
-    piece('black', 'black', 'colours', 'Black'),
-    piece('gray', 'gray', 'colours', 'Gray'),
-    piece('brown', 'brown', 'colours', 'Brown'),
-    piece('teal', 'teal', 'colours', 'Teal'),
-    piece('magenta', 'magenta', 'colours', 'Magenta'),
+    piece('red', 'red', 'colours', 'panels.words.what.red'),
+    piece('blue', 'blue', 'colours', 'panels.words.what.blue'),
+    piece('green', 'green', 'colours', 'panels.words.what.green'),
+    piece('orange', 'orange', 'colours', 'panels.words.what.orange'),
+    piece('purple', 'purple', 'colours', 'panels.words.what.purple'),
+    piece('black', 'black', 'colours', 'panels.words.what.black'),
+    piece('gray', 'gray', 'colours', 'panels.words.what.gray'),
+    piece('brown', 'brown', 'colours', 'panels.words.what.brown'),
+    piece('teal', 'teal', 'colours', 'panels.words.what.teal'),
+    piece('magenta', 'magenta', 'colours', 'panels.words.what.magenta'),
 ];
 
-export const GROUP_TITLES: Record<WordGroup, string> = { lines: 'Lines', phrases: 'Phrases', options: 'Options', colours: 'Colours' };
+/** The title of each group: keys, shown with t(). */
+export const GROUP_TITLES: Record<WordGroup, MessageKey> = {
+    lines: 'panels.words.group.lines',
+    phrases: 'panels.words.group.phrases',
+    options: 'panels.words.group.options',
+    colours: 'panels.words.group.colours',
+};
 
 /** A word of a person's own for several options at once. */
 export interface Bundle {
@@ -186,18 +193,18 @@ export function clean(w: Partial<ChartWords>): ChartWords {
 /** Why `word` cannot be one of the words of piece `id` (or a bundle, with `id` null); '' when it can. */
 export function wordProblem(word: string, id: string | null, w: ChartWords): string {
     const lower = word.toLowerCase();
-    if (!/^[\p{L}][\p{L}\p{N}' -]*$/u.test(word)) return `"${word}": use letters, spaces, hyphens and apostrophes, and start with a letter.`;
-    if (RESERVED.has(lower)) return `"${word}" is a word of the chart language or a name formulas use.`;
+    if (!/^[\p{L}][\p{L}\p{N}' -]*$/u.test(word)) return t('panels.words.problem.letters', { word });
+    if (RESERVED.has(lower)) return t('panels.words.problem.reserved', { word });
     const own = id ? PIECE_BY_ID.get(id) : undefined;
     if (BUILTIN_WORDS.has(lower) && (!own || own.builtin !== lower)) {
         const other = PIECES.find((p) => p.builtin === lower);
-        return `"${word}" is already the built-in word for "${other ? other.builtin : lower}".`;
+        return t('panels.words.problem.builtin', { word, piece: other ? other.builtin : lower });
     }
     for (const [other, list] of Object.entries(w.words)) {
         if (other === id) continue;
-        if (list.some((x) => x.toLowerCase() === lower)) return `"${word}" is already your word for "${PIECE_BY_ID.get(other)?.builtin ?? other}".`;
+        if (list.some((x) => x.toLowerCase() === lower)) return t('panels.words.problem.yours', { word, piece: PIECE_BY_ID.get(other)?.builtin ?? other });
     }
-    if (w.bundles.some((b) => b.word.toLowerCase() === lower)) return `"${word}" is already one of your bundle words.`;
+    if (w.bundles.some((b) => b.word.toLowerCase() === lower)) return t('panels.words.problem.bundle', { word });
     return '';
 }
 
@@ -515,7 +522,7 @@ export function wordsFromText(text: string, write: ChartWords['write'] = 'yours'
         const m = /^(.+?)\s*=\s*(.+)$/.exec(line);
         const p = m ? PIECES.find((x) => x.builtin === m[1].trim().toLowerCase() && !x.beforeColour) ?? PIECES.find((x) => x.id === m[1].trim().toLowerCase()) : undefined;
         if (!m || !p) {
-            problems.push(`line ${i + 1}: "${line}" is not "built-in = your words"`);
+            problems.push(t('panels.words.problem.line', { line: i + 1, text: line }));
             return;
         }
         words[p.id] = m[2].split(',').map((s) => s.trim()).filter(Boolean);

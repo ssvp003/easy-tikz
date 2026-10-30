@@ -20,6 +20,7 @@
  */
 import { RESERVED_NAMES } from '../migrate';
 import { ChartWords, chartWords, hasWords, readWords, shadowed, typedColumn } from './words';
+import { MessageKey, t as msg } from '../i18n';
 
 type Data = Record<string, unknown>;
 
@@ -373,11 +374,11 @@ class Builder {
     /** A name the user gave, checked: letters, digits and _, not a built-in, not taken twice. */
     claim(name: string, at: number): string | null {
         if (RESERVED_NAMES.has(name)) {
-            this.problem(at, `"${name}" is a built-in name; pick another name`);
+            this.problem(at, msg('problems.text.builtInName', { name }));
             return null;
         }
         if (this.taken.has(name)) {
-            this.problem(at, `the name ${name} is used twice`);
+            this.problem(at, msg('problems.text.nameTwice', { name }));
             return null;
         }
         this.taken.add(name);
@@ -434,7 +435,7 @@ class Builder {
 /** Lines about the chart itself, and sliders: their words are their own, and they take no options. */
 const CHART_WORDS = new Set(['view', 'show', 'axes', 'no', 'grid', 'with', 'size', 'equal', 'polar', '3d', 'snippet', 'variables', 'set', 'slider']);
 
-/** What each kind of object accepts as options, for messages. */
+/** What each kind of object accepts as options, for messages (words of the chart language: they stay English). */
 const OPTION_HELP: Record<string, string> = {
     function:
         'in a colour, thin, thick, dashed, hidden, with a legend, with the legend "text", from x = a to b, with its tangent at a, with its extrema, filled, opacity 0.3, pattern dots',
@@ -445,6 +446,18 @@ const OPTION_HELP: Record<string, string> = {
     text: 'in a colour, small, large, above, below, left, right, center, hidden',
     surface: 'in a colour, for x from a to b and y from c to d, opacity 0.7, 40 samples, wireframe, hidden',
     plane: 'in a colour, opacity 0.25, hidden',
+};
+
+/** Each kind of object in words, for messages. */
+const KIND_WORDS: Record<keyof typeof OPTION_HELP, MessageKey> = {
+    function: 'problems.text.kindFunction',
+    region: 'problems.text.kindRegion',
+    curve: 'problems.text.kindCurve',
+    points: 'problems.text.kindPoints',
+    segment: 'problems.text.kindSegment',
+    text: 'problems.text.kindText',
+    surface: 'problems.text.kindSurface',
+    plane: 'problems.text.kindPlane',
 };
 
 /** Apply the options to `target`; problems are recorded. */
@@ -477,7 +490,8 @@ function applyOptions(b: Builder, kind: keyof typeof OPTION_HELP, target: Data, 
             continue;
         }
         if (applyKindOption(b, kind, target, opt)) continue;
-        b.problem(opt.at, `unknown option "${o}"; a ${kind} takes: ${OPTION_HELP[kind]}`);
+        const kindWord = Object.prototype.hasOwnProperty.call(KIND_WORDS, kind) ? msg(KIND_WORDS[kind]) : kind;
+        b.problem(opt.at, msg('problems.text.unknownOption', { option: o, kind: kindWord, options: OPTION_HELP[kind] }));
     }
 }
 
@@ -583,20 +597,20 @@ function set(target: Data, key: string, value: unknown): true {
 }
 
 function badRange(b: Builder, opt: Piece): true {
-    b.problem(opt.at, `"${opt.text}" needs a range such as 0..2pi`);
+    b.problem(opt.at, msg('problems.text.needsRange', { option: opt.text }));
     return true;
 }
 
 function numberOption(b: Builder, opt: Piece, target: Data, key: string, value: string): true {
     const n = numberOf(value);
-    if (n === null) b.problem(opt.at, `"${opt.text}" needs a number`);
+    if (n === null) b.problem(opt.at, msg('problems.text.needsNumber', { option: opt.text }));
     else target[key] = n;
     return true;
 }
 
 function patternOption(b: Builder, opt: Piece, target: Data, value: string): true {
     const p = value.trim().toLowerCase();
-    if (!PATTERNS.has(p)) b.problem(opt.at, `unknown pattern "${value.trim()}"; patterns: ${[...PATTERNS].join(', ')}`);
+    if (!PATTERNS.has(p)) b.problem(opt.at, msg('problems.text.unknownPattern', { pattern: value.trim(), patterns: [...PATTERNS].join(', ') }));
     else target.fillPattern = p;
     return true;
 }
@@ -744,9 +758,7 @@ function parseBuiltin(text: string, opts: { trace?: boolean }): TextChart {
     for (const ref of b.theRegion) {
         if (regions.length === 1) ref.tool.regionName = regions[0].name;
         else {
-            const message = regions.length
-                ? `"the region" is unclear: this chart shades ${regions.length} regions. Name one (R1: shade ...) and write R1 instead`
-                : '"the region" needs a shaded region: shade where x + y <= 4 and x >= 0 and y >= 0';
+            const message = regions.length ? msg('problems.text.theRegionUnclear', { count: regions.length }) : msg('problems.text.theRegionMissing');
             b.problems.push({ line: ref.line, column: ref.at + 1, message });
         }
     }
@@ -798,7 +810,7 @@ function statement(b: Builder, line: string) {
     if (DEFINITION.test(t)) return formulaLine(b, name, body, options);
     const kw = /^([A-Za-z0-9]+)\b\s*(.*)$/.exec(t);
     const word = kw ? kw[1].toLowerCase() : '';
-    if (split.bar >= 0 && CHART_WORDS.has(word)) b.problem(split.bar, `${word} takes no options after |`);
+    if (split.bar >= 0 && CHART_WORDS.has(word)) b.problem(split.bar, msg('problems.text.noOptions', { word }));
     const restAt = kw ? body.at + t.length - kw[2].length : body.at;
     const rest: Piece = { text: kw ? kw[2] : '', at: restAt };
     // A formula that starts with a name like a word of the syntax (`mark + x = 3`, a slider called mark) is a formula.
@@ -812,7 +824,7 @@ function statement(b: Builder, line: string) {
             return axes(b, rest);
         case 'no':
             if (/^axes$/i.test(rest.text.trim())) b.chart.showAxis = false;
-            else b.problem(body.at, 'did you mean "no axes"?');
+            else b.problem(body.at, msg('problems.text.didYouMean', { phrase: 'no axes' }));
             return;
         case 'with':
             return withLine(b, rest);
@@ -821,32 +833,32 @@ function statement(b: Builder, line: string) {
             if (!g || g === 'major') b.chart.showLargeGrid = true;
             else if (g === 'minor') b.chart.showSmallGrid = true;
             else if (g === 'fine' || g === 'both') b.chart.showLargeGrid = b.chart.showSmallGrid = true;
-            else b.problem(rest.at, 'grid takes nothing, major, minor or fine');
+            else b.problem(rest.at, msg('problems.text.gridTakes'));
             return;
         }
         case 'size': {
             const m = /^([\d.]+)\s*(?:x|by|×)\s*([\d.]+)\s*(cm)?$/i.exec(rest.text.trim());
-            if (!m) return b.problem(rest.at, 'size takes width x height in cm, such as size 12 x 6');
+            if (!m) return b.problem(rest.at, msg('problems.text.sizeTakes'));
             b.chart.size_x_cm = Number(m[1]);
             b.chart.size_y_cm = Number(m[2]);
             return;
         }
         case 'equal':
             if (/^scale$/i.test(rest.text.trim())) b.chart.equalScale = true;
-            else b.problem(body.at, 'did you mean "equal scale"?');
+            else b.problem(body.at, msg('problems.text.didYouMean', { phrase: 'equal scale' }));
             return;
         case 'polar':
-            if (rest.text.trim()) b.problem(rest.at, 'polar stands alone on its line');
+            if (rest.text.trim()) b.problem(rest.at, msg('problems.text.standsAlone', { word: 'polar' }));
             b.chart.coordinateSystem = 'polar';
             return;
         case '3d':
-            if (rest.text.trim()) b.problem(rest.at, '3d stands alone on its line');
+            if (rest.text.trim()) b.problem(rest.at, msg('problems.text.standsAlone', { word: '3d' }));
             b.chart.dimension = true;
             return;
         case 'raw':
             return rawLine(b, rest);
         case 'snippet':
-            if (rest.text.trim()) b.problem(rest.at, 'snippet stands alone on its line');
+            if (rest.text.trim()) b.problem(rest.at, msg('problems.text.standsAlone', { word: 'snippet' }));
             b.chart.documentSetup = false;
             return;
         case 'variables':
@@ -886,14 +898,14 @@ function statement(b: Builder, line: string) {
         case 'max':
         case 'min': {
             const m = /^(?:of\s+)?(.+?)\s+(?:over|on|in)\s+(the\s+region|\S+)$/i.exec(rest.text.trim());
-            if (!m) return b.problem(rest.at, `${word} takes an objective and a region: ${word} 2x + 3y over R1`);
+            if (!m) return b.problem(rest.at, msg('problems.text.optimumTakes', { word }));
             return regionPoints(b, name, 'region', m[2], rest, { objective: m[1].trim(), sense: word }, options);
         }
         case 'integer':
             return mark(b, name, { text: `integer ${rest.text}`, at: body.at }, options);
         case 'double':
             if (/^arrows?\b/i.test(rest.text)) return segment(b, 'double', name, drop(rest, /^arrows?\s*/i), options);
-            return b.problem(body.at, 'did you mean "double arrow from A to B"?');
+            return b.problem(body.at, msg('problems.text.didYouMean', { phrase: 'double arrow from A to B' }));
         case 'arrow':
         case 'segment':
         case 'polygon':
@@ -912,7 +924,7 @@ function view(b: Builder, word: string, rest: Piece) {
             const m = /^([xyz])\s+(?:from\s+)?(.+)$/i.exec(part.text);
             const r = m ? parseRange(m[2]) : null;
             if (!m || !r) {
-                b.problem(part.at, word === 'view' ? 'view takes ranges such as x -3..3, y -4..4' : 'show takes ranges such as x from -3 to 3 and y from -4 to 4');
+                b.problem(part.at, msg(word === 'view' ? 'problems.text.viewTakes' : 'problems.text.showTakes'));
                 continue;
             }
             const axis = m[1].toLowerCase();
@@ -929,7 +941,7 @@ function axes(b: Builder, rest: Piece) {
         .replace(/^(?:on|in|at)\s+(?:the\s+|a\s+)?/, '');
     if (style === 'none') b.chart.showAxis = false;
     else if (AXIS_STYLES[style]) b.chart.axis_style = AXIS_STYLES[style];
-    else b.problem(rest.at, 'axes takes on the edges, in the middle or in a box (or write no axes)');
+    else b.problem(rest.at, msg('problems.text.axesTakes'));
 }
 
 function withLine(b: Builder, rest: Piece) {
@@ -941,12 +953,12 @@ function withLine(b: Builder, rest: Piece) {
     else if (g === 'fine grid') b.chart.showLargeGrid = b.chart.showSmallGrid = true;
     else if (g === 'minor grid') b.chart.showSmallGrid = true;
     else if (g === 'equal scale') b.chart.equalScale = true;
-    else b.problem(rest.at, 'with takes a grid, a fine grid or a minor grid');
+    else b.problem(rest.at, msg('problems.text.withTakes'));
 }
 
 function setLine(b: Builder, rest: Piece) {
     const m = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/.exec(rest.text.trim());
-    if (!m) return b.problem(rest.at, 'set takes a field and a value: set previewSize = 900');
+    if (!m) return b.problem(rest.at, msg('problems.text.setTakes'));
     b.chart[m[1]] = rawValue(m[2]);
 }
 
@@ -961,38 +973,38 @@ const SLIDER_PARTS: Array<{ re: RegExp; part: 'value' | 'range' | 'step' }> = [
 function slider(b: Builder, rest: Piece) {
     const text = rest.text.trim();
     const head = new RegExp(`^(${NAME})(?![A-Za-z0-9_])\\s*(.*)$`).exec(text);
-    if (!head) return b.problem(rest.at, 'slider takes a name and a range: slider a from 0 to 5, starting at 1');
+    if (!head) return b.problem(rest.at, msg('problems.text.sliderTakes'));
     const got: { value?: string; lo?: string; hi?: string; step?: string } = {};
     let tail = head[2];
     for (;;) {
         tail = tail.replace(/^[\s,]+/, '');
         if (!tail) break;
         const hit = SLIDER_PARTS.map((p) => ({ p, m: p.re.exec(tail) })).find((h) => h.m);
-        if (!hit || !hit.m) return b.problem(rest.at + text.length - tail.length, `slider ${head[1]}: "${tail}" is not a range, start or step. Write: slider ${head[1]} from 0 to 5, starting at 1`);
+        if (!hit || !hit.m) return b.problem(rest.at + text.length - tail.length, msg('problems.text.sliderPart', { name: head[1], text: tail }));
         if (hit.p.part === 'range') [got.lo, got.hi] = [hit.m[1], hit.m[2]];
         else got[hit.p.part] = hit.m[1];
         tail = tail.slice(hit.m[0].length);
     }
     const name = b.claim(head[1], rest.at);
-    if (got.value === undefined && got.lo === undefined) return b.problem(rest.at, `slider ${head[1]} needs a range: slider ${head[1]} from 0 to 10`);
+    if (got.value === undefined && got.lo === undefined) return b.problem(rest.at, msg('problems.text.sliderNeedsRange', { name: head[1] }));
     let min = 0;
     let max = 10;
     if (got.lo !== undefined && got.hi !== undefined) {
         const lo = numberOf(got.lo);
         const hi = numberOf(got.hi);
-        if (lo === null || hi === null || !(lo < hi)) return b.problem(rest.at, `the range of slider ${head[1]} must be numbers, low to high`);
+        if (lo === null || hi === null || !(lo < hi)) return b.problem(rest.at, msg('problems.text.sliderRange', { name: head[1] }));
         min = lo;
         max = hi;
     }
     const value = got.value === undefined ? min : numberOf(got.value);
-    if (value === null) return b.problem(rest.at, `the value of slider ${head[1]} must be a number`);
+    if (value === null) return b.problem(rest.at, msg('problems.text.sliderValue', { name: head[1] }));
     if (got.lo === undefined) {
         min = Math.min(0, value);
         max = Math.max(10, value);
     }
     let step = got.step === undefined ? niceStep((max - min) / 100) : numberOf(got.step);
     if (step === null || !(step > 0)) {
-        b.problem(rest.at, `the step of slider ${head[1]} must be a positive number`);
+        b.problem(rest.at, msg('problems.text.sliderStep', { name: head[1] }));
         step = 0.1;
     }
     if (name) b.parameters.push({ name, value, min, max, step });
@@ -1000,7 +1012,7 @@ function slider(b: Builder, rest: Piece) {
 
 function conditionFields(b: Builder, rest: Piece): Data {
     const { conditions, labels } = conditionsOf(b, rest);
-    if (!conditions.some((c) => c.trim())) b.problem(rest.at, 'shade needs conditions: shade where x + y <= 4 and x >= 0');
+    if (!conditions.some((c) => c.trim())) b.problem(rest.at, msg('problems.text.shadeNeedsConditions'));
     return { conditions, conditionLabels: labels };
 }
 
@@ -1041,22 +1053,22 @@ function mark(b: Builder, name: string | null, rest: Piece, options: Piece[]) {
     if (m) return regionPoints(b, name, 'lattice', m[1] ?? '', p, {}, options);
     m = /^integer\s+(maximum|minimum|max|min)\s+(?:of\s+)?(.+?)\s+(?:in|over|on)\s+(the\s+region|\S+)$/i.exec(t);
     if (m) return regionPoints(b, name, 'lattice', m[3], p, { objective: m[2].trim(), sense: m[1].slice(0, 3).toLowerCase() }, options);
-    const hints: Array<[RegExp, string]> = [
-        [/^(maximum|minimum|max|min)\b/i, 'mark the maximum of 2x + 3y in R1 (or in the region)'],
-        [/^corners\b/i, 'mark the corners of R1 (or of the region)'],
-        [/^(crossings|intersections|crossing|intersection)\b/i, 'mark the crossings of f and g (or: mark where f and g cross)'],
-        [/^where\b/i, 'mark where f and g cross'],
-        [/^integer\b/i, 'mark the integer points in R1, or mark the integer maximum of 3x + 4y in R1'],
+    const hints: Array<[RegExp, MessageKey]> = [
+        [/^(maximum|minimum|max|min)\b/i, 'problems.text.markOptimumHint'],
+        [/^corners\b/i, 'problems.text.markCornersHint'],
+        [/^(crossings|intersections|crossing|intersection)\b/i, 'problems.text.markCrossingsHint'],
+        [/^where\b/i, 'problems.text.markWhereHint'],
+        [/^integer\b/i, 'problems.text.markIntegerHint'],
     ];
     const hint = hints.find(([re]) => re.test(t));
-    if (hint) return b.problem(p.at, `write: ${hint[1]}`);
+    if (hint) return b.problem(p.at, msg(hint[1]));
     pointList(b, name, drop(p, /^points?\s+/i), options);
 }
 
 /** `plot ...`: a function (plot f(x) = ..., plot y = ..., plot sin(x)), a surface (plot z = ...) or what the formula is. */
 function plot(b: Builder, name: string | null, rest: Piece, options: Piece[]) {
     const t = rest.text.trim();
-    if (!t) return b.problem(rest.at, 'plot takes a function: plot f(x) = x^2');
+    if (!t) return b.problem(rest.at, msg('problems.text.plotTakes'));
     if (/[=<>]/.test(t)) return formulaLine(b, name, rest, options);
     fn(b, name ?? b.nextName('f'), 'x', t, rest, options);
 }
@@ -1067,7 +1079,7 @@ const DRAW_NOUN = /^(?:(?:a|an|the)\s+)?(double\s+arrow|arrow|line|segment|polyg
 /** `draw ...`: an equation's curve (draw 2x + 3y = c), level curves, arrows, lines, polygons, braces and planes. */
 function draw(b: Builder, name: string | null, rest: Piece, options: Piece[]) {
     const t = rest.text.trim();
-    if (!t) return b.problem(rest.at, 'draw takes an equation or a shape: draw 2x + 3y = 12, draw an arrow from (0, 0) to (3, 2)');
+    if (!t) return b.problem(rest.at, msg('problems.text.drawTakes'));
     if (DEFINITION.test(t)) return formulaLine(b, name, rest, options);
     const m = DRAW_NOUN.exec(t);
     if (m) {
@@ -1092,7 +1104,7 @@ function curve(b: Builder, name: string | null, rest: Piece, options: Piece[]) {
 /** `levels F at 1, 4`, `the level curves of F at 1, 4 and 9`. */
 function levels(b: Builder, name: string | null, rest: Piece, options: Piece[]) {
     const m = /^(?:of\s+)?(.+?)\s+at\s+(.+)$/i.exec(rest.text.trim());
-    if (!m) return b.problem(rest.at, 'level curves take a formula and its values: draw the level curves of x^2 + y^2 at 1, 4 and 9');
+    if (!m) return b.problem(rest.at, msg('problems.text.levelsTake'));
     const values = m[2].trim();
     const list = splitTop(values, ' and ').length > 1 ? splitTop(values, ',').flatMap((p) => splitTop(p.text, ' and ')).map((p) => p.text).join(', ') : values;
     addTool(b, 'curve', name, { equation: m[1].trim(), levels: list }, options, 'curve');
@@ -1100,7 +1112,7 @@ function levels(b: Builder, name: string | null, rest: Piece, options: Piece[]) 
 
 function plane(b: Builder, name: string | null, rest: Piece, options: Piece[]) {
     const m = /^(?:at\s+)?([xyz])\s*=\s*(.+)$/i.exec(rest.text.trim());
-    if (!m) return b.problem(rest.at, 'a plane takes x = ..., y = ... or z = ...: draw the plane z = 2');
+    if (!m) return b.problem(rest.at, msg('problems.text.planeTakes'));
     b.is3D = true;
     addTool(b, 'plane3D', name, { axis: m[1].toLowerCase(), value: m[2].trim() }, options, 'plane');
 }
@@ -1118,30 +1130,42 @@ function segment(b: Builder, word: string, name: string | null, rest: Piece, opt
         const p = drop(rest, /^from\s+/i);
         parts = splitTop(p.text, ' to ', p.at);
         style = 'brace';
-        if (parts.length !== 2) return b.problem(rest.at, 'a brace takes two points: brace from (0, 0) to (4, 0)');
+        if (parts.length !== 2) return b.problem(rest.at, msg('problems.text.braceTakes'));
     } else {
         const from = after(rest, /^from\s+/i);
         const arrow = from ? null : ['<->', '->', '<-'].find((a) => splitTop(rest.text, a).length > 1);
         if (from) parts = splitTop(from.text, ' to ', from.at);
-        else if ((word === 'arrow' || word === 'double') && !arrow) return b.problem(rest.at, 'an arrow takes points: arrow from (0, 0) to (2, 1)');
+        else if ((word === 'arrow' || word === 'double') && !arrow) return b.problem(rest.at, msg('problems.text.arrowTakes'));
         else parts = splitTop(rest.text, arrow ?? '--', rest.at);
         if (from) style = word === 'arrow' ? 'forward' : word === 'double' ? 'both' : 'line';
         else style = arrow === '->' ? 'forward' : arrow === '<-' ? 'backward' : arrow === '<->' ? 'both' : 'line';
     }
     parts = parts.filter((p) => p.text);
-    if (parts.length < 2) return b.problem(rest.at, `${word === 'double' ? 'a double arrow' : word === 'arrow' ? 'an arrow' : `a ${word === 'segment' ? 'line' : word}`} needs at least two points`);
+    if (parts.length < 2) {
+        const key = Object.prototype.hasOwnProperty.call(TWO_POINTS, word) ? TWO_POINTS[word] : null;
+        return b.problem(rest.at, key ? msg(key) : msg('problems.text.shapeTwoPoints', { shape: word }));
+    }
     const fields: Data = { dim: dims(b, parts), path: pathOf(parts) };
     if (style !== 'line') fields.style = style;
     if (closed) fields.closed = true;
     addTool(b, 'segment', name, fields, options, 'segment');
 }
 
+/** 'an arrow needs at least two points', by the word that drew it. */
+const TWO_POINTS: Record<string, MessageKey> = {
+    double: 'problems.text.doubleArrowTwoPoints',
+    arrow: 'problems.text.arrowTwoPoints',
+    segment: 'problems.text.lineTwoPoints',
+    polygon: 'problems.text.polygonTwoPoints',
+    brace: 'problems.text.braceTwoPoints',
+};
+
 function textLine(b: Builder, word: string, rest: Piece, options: Piece[]) {
     const q = takeQuoted(rest.text);
     const m = q ? /^at\s+(\(.+\))$/i.exec(q.rest) : null;
-    if (!q || !m) return b.problem(rest.at, `${word} takes "words" at (x, y): ${word} "optimum" at (3, 1.2)`);
+    if (!q || !m) return b.problem(rest.at, msg('problems.text.textTakes', { word }));
     const coords = splitTop(m[1].slice(1, -1), ',');
-    if (coords.length < 2 || coords.length > 3) return b.problem(rest.at, `${word} needs a position (x, y) or (x, y, z)`);
+    if (coords.length < 2 || coords.length > 3) return b.problem(rest.at, msg('problems.text.textPosition', { word }));
     const a: Data = { text: q.text, x: coords[0].text, y: coords[1].text };
     if (coords.length === 3) a.z = coords[2].text;
     applyOptions(b, 'text', a, options);
@@ -1170,14 +1194,14 @@ function formulaOptions(body: Piece, options: Piece[]): { formula: Piece; option
 /** `raw tool {...}`, `raw function {...}`, `raw surface {...}`, `raw label {...}`: an object as JSON, for what the words cannot say. */
 function rawLine(b: Builder, rest: Piece) {
     const m = /^(tool|function|surface|label|slider)\s+(\{.*\})$/i.exec(rest.text.trim());
-    if (!m) return b.problem(rest.at, 'raw takes tool, function, surface, label or slider and a JSON object: raw tool {"type": "curve", "equation": "x = 1"}');
+    if (!m) return b.problem(rest.at, msg('problems.text.rawTakes'));
     let obj: unknown;
     try {
         obj = JSON.parse(m[2]);
     } catch (e) {
-        return b.problem(rest.at, `raw ${m[1]}: ${e instanceof Error ? e.message : 'not valid JSON'}`);
+        return b.problem(rest.at, msg('problems.text.rawJson', { kind: m[1], error: e instanceof Error ? e.message : msg('problems.text.notValidJson') }));
     }
-    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return b.problem(rest.at, `raw ${m[1]} needs a JSON object { ... }`);
+    if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return b.problem(rest.at, msg('problems.text.rawNeedsObject', { kind: m[1] }));
     const item = obj as Data;
     const kind = m[1].toLowerCase();
     if (kind === 'label') {
@@ -1187,7 +1211,7 @@ function rawLine(b: Builder, rest: Piece) {
     if (kind === 'slider') {
         const name = typeof item.name === 'string' ? b.claim(item.name, rest.at) : null;
         if (name) b.parameters.push(item);
-        else if (typeof item.name !== 'string') b.problem(rest.at, 'raw slider needs a "name"');
+        else if (typeof item.name !== 'string') b.problem(rest.at, msg('problems.text.rawSliderName'));
         return;
     }
     const given = typeof item.name === 'string' && item.name ? b.claim(item.name, rest.at) : null;
@@ -1211,7 +1235,7 @@ function formulaLine(b: Builder, name: string | null, body: Piece, options: Piec
     // A built-in name (max(x, y) = 1) is a call in an equation, not a definition.
     const found = DEFINITION.exec(t);
     const def = found && !RESERVED_NAMES.has(found[1]) ? found : null;
-    if (def && !def[4].trim()) return b.problem(body.at + t.length, `${def[1]}(${def[2]}) = needs a formula after =`);
+    if (def && !def[4].trim()) return b.problem(body.at + t.length, msg('problems.text.needsFormula', { head: `${def[1]}(${def[2]})` }));
     if (def) {
         const fname = b.claim(def[1], body.at) ?? def[1];
         const v = def[2];
@@ -1233,10 +1257,7 @@ function formulaLine(b: Builder, name: string | null, body: Piece, options: Piec
         return;
     }
     if (/=/.test(relations)) return curve(b, name, body, options);
-    b.problem(
-        body.at,
-        'this line is not a chart object. Lines start with show, plot, draw, shade, mark, write, slider, title, xlabel, ylabel, axes, size or set, or are formulas (f(x) = x^2, 2x + 3y = 12, x + y <= 4)'
-    );
+    b.problem(body.at, msg('problems.text.notAChartLine'));
 }
 
 function fn(b: Builder, name: string, v: string, rhs: string, body: Piece, options: Piece[]) {
@@ -1244,14 +1265,14 @@ function fn(b: Builder, name: string, v: string, rhs: string, body: Piece, optio
     if (v === 't') {
         const tuple = /^\((.*)\)$/.exec(rhs.trim());
         const parts = tuple ? splitTop(tuple[1], ',') : [];
-        if (parts.length !== 2) return b.problem(body.at, `${name}(t) needs a pair: ${name}(t) = (cos(t), sin(t))`);
+        if (parts.length !== 2) return b.problem(body.at, msg('problems.text.needsPair', { name }));
         f.parametric = true;
         f.expression = parts[0].text;
         f.expressionY = parts[1].text;
     } else if (v === 'theta' || v === 'θ') {
         b.chart.coordinateSystem = 'polar';
     } else if (v !== 'x') {
-        return b.problem(body.at, `${name}(${v}): functions use x, parametric curves t and polar curves theta`);
+        return b.problem(body.at, msg('problems.text.whichVariable', { head: `${name}(${v})` }));
     }
     applyOptions(b, 'function', f, options);
     b.functions.push(f);

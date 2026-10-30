@@ -2,6 +2,13 @@
 
 [Overview](../README.md) · [Guides](guides/README.md) · [Reference](reference.md) · [Changelog](../CHANGELOG.md)
 
+## 4.7: the interface in your language
+
+- **Japanese.** When Obsidian is set to Japanese, so is Easy TikZ: every menu, button, setting, notice, dialog and problem message (about 1,400 texts), and the 24 guides in the Help tab. It was asked for in [issue #4](https://github.com/Saiki77/easy-tikz/issues/4) by a reader who offered to check it; corrections are welcome there.
+- **Follows Obsidian.** Settings, **Interface language**: Follow Obsidian (default), English or 日本語. A language Easy TikZ does not have yet shows in English.
+- **What stays as it is.** Formulas, the chart language (`show`, `plot`, ...: give its pieces your own words in Settings, Chart words, Japanese included), the exported TikZ, what the AI tools answer to AI apps, and the guide pages on GitHub.
+- **More languages.** Every text has a key; [`src/i18n/README.md`](../src/i18n/README.md) explains how a language is added, with the Japanese style and a glossary.
+
 ## 4.6: your own chart words
 
 - **Your words for the chart language.** Settings, Chart words, **Edit words**: every piece of the language (lines such as `plot` and `shade`, phrases such as `the maximum of`, options and colours) can get your own words, in your language or your own terms. Several words for one piece are fine; the first is the one the plugin writes. The built-in words keep working beside yours, so notes from others, the guides and AI apps still draw.

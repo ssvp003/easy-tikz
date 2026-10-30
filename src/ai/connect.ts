@@ -2,8 +2,11 @@
  * Connecting AI apps to the local AI server: the token, the lines each app
  * needs (shown with Copy buttons under Settings > AI access), and the
  * section of AGENTS.md / CLAUDE.md that tells agents working in the vault
- * how to make charts. Pure, so tests/ai.test.ts covers it.
+ * how to make charts. Pure, so tests/ai.test.ts covers it. What a person
+ * reads (where each snippet goes) is in their language when it is read;
+ * the snippets and the section for agents stay English.
  */
+import { t } from '../i18n';
 
 export interface AiApp {
     id: string;
@@ -24,50 +27,69 @@ export const AI_APPS: AiApp[] = [
     {
         id: 'claude-code',
         name: 'Claude Code',
-        where: 'Run once in a terminal. Claude Code then has the Easy TikZ tools in every project.',
+        get where() {
+            return t('problems.ai.whereClaudeCode');
+        },
         snippet: (url, token) => `claude mcp add --transport http --scope user easy-tikz ${url} --header "Authorization: Bearer ${token}"`,
     },
     {
         id: 'codex',
         name: 'Codex (OpenAI)',
-        where: 'Run the first line once in a terminal; put the second line in your shell profile so Codex finds the token.',
+        get where() {
+            return t('problems.ai.whereCodex');
+        },
         snippet: (url, token) => `codex mcp add easy-tikz --url ${url} --bearer-token-env-var EASY_TIKZ_TOKEN\nexport EASY_TIKZ_TOKEN=${token}`,
     },
     {
         id: 'gemini',
         name: 'Gemini CLI',
-        where: 'Run once in a terminal.',
+        get where() {
+            return t('problems.ai.whereGemini');
+        },
         snippet: (url, token) => `gemini mcp add --scope user --transport http --header "Authorization: Bearer ${token}" easy-tikz ${url}`,
     },
     {
         id: 'cursor',
         name: 'Cursor',
-        where: 'Add to ~/.cursor/mcp.json (merge with the servers already there).',
+        get where() {
+            return t('problems.ai.whereCursor');
+        },
         snippet: (url, token) => json({ mcpServers: { 'easy-tikz': { url: `${url}?token=${token}` } } }),
     },
     {
         id: 'vscode',
         name: 'VS Code (Copilot)',
-        where: 'Command palette > "MCP: Open User Configuration", then add this server.',
+        get where() {
+            return t('problems.ai.whereVsCode');
+        },
         snippet: (url, token) => json({ servers: { 'easy-tikz': { type: 'http', url, headers: { Authorization: `Bearer ${token}` } } } }),
     },
     {
         id: 'claude-desktop',
         name: 'Claude Desktop',
-        where: 'Add to claude_desktop_config.json (Settings > Developer > Edit config). Claude Desktop reaches local servers through the mcp-remote bridge, which needs Node.js.',
+        get where() {
+            return t('problems.ai.whereClaudeDesktop');
+        },
         // mcp-remote below 0.1.16 had a command injection (CVE-2025-6514); the range never takes those.
         snippet: (url, token) => json({ mcpServers: { 'easy-tikz': { command: 'npx', args: ['-y', 'mcp-remote@^0.1.16', `${url}?token=${token}`] } } }),
     },
     {
         id: 'lm-studio',
         name: 'LM Studio',
-        where: "Add to LM Studio's mcp.json.",
+        get where() {
+            return t('problems.ai.whereLmStudio');
+        },
         snippet: (url, token) => json({ mcpServers: { 'easy-tikz': { url: `${url}?token=${token}` } } }),
     },
     {
         id: 'shell',
-        name: 'Any agent with a terminal',
-        where: 'Paste this into the chat with the agent (Aider, Codex, Claude Code, Gemini CLI and others).',
+        get name() {
+            return t('problems.ai.shellName');
+        },
+        get where() {
+            return t('problems.ai.whereShell');
+        },
+        // A prompt for the agent: it stays English.
         snippet: (url, token) =>
             `Easy TikZ (an Obsidian plugin) makes charts in my notes. Read its guide first: curl -s "${url.replace(/\/mcp$/, '')}/guide?token=${token}". Then use POST /tools/check_chart and POST /tools/add_chart as the guide describes, with the same ?token=.`,
     },

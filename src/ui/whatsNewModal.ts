@@ -14,7 +14,7 @@
  * timers) stops in onClose. Nothing is loaded from the network.
  */
 import { App, Modal, setIcon } from 'obsidian';
-import { guideById } from '../guides';
+import { localGuideById } from '../guides';
 import { MathContext } from '../mathcontext';
 import { normalizeParameters } from '../migrate';
 import { SVGRenderer } from '../renderer';
@@ -22,8 +22,21 @@ import { SceneCache } from '../scene';
 import { SettingsManager } from '../settings';
 import { Parameter } from '../types';
 import { cloneData, errorText, fitPixelScale } from '../util';
-import { WHATS_NEW_RECENT, WHATS_NEW_RECENT_TITLE, WHATS_NEW_AI, WHATS_NEW_CHART_GUIDE, WHATS_NEW_LIVE, WHATS_NEW_MORE, WHATS_NEW_SUBTITLE, WHATS_NEW_TITLE, whatsNewChart, whatsNewText, WhatsNewItem } from '../whatsnew';
+import {
+    WHATS_NEW_RECENT,
+    WHATS_NEW_AI,
+    WHATS_NEW_CHART_GUIDE,
+    WHATS_NEW_LIVE,
+    WHATS_NEW_MORE,
+    WHATS_NEW_TITLE,
+    whatsNewChart,
+    whatsNewRecentTitle,
+    whatsNewSubtitle,
+    whatsNewText,
+    WhatsNewItem,
+} from '../whatsnew';
 import { IconButtonHandle, LiveSliderHandle, formatDecimals, iconButton, liveSlider, textButton, uniqueId, visuallyHidden } from './kit';
+import { t } from '../i18n';
 
 /** What the buttons of the popup do; the caller decides (a new editor, or the editor the popup was opened from). */
 export interface WhatsNewActions {
@@ -71,11 +84,11 @@ export class WhatsNewModal extends Modal {
         const version = words.pop() || '';
         titleEl.appendText(words.join(' ') + ' ');
         titleEl.createSpan({ cls: 'etz-whatsnew-version', text: version });
-        contentEl.createEl('p', { cls: 'etz-whatsnew-subtitle', text: WHATS_NEW_SUBTITLE });
+        contentEl.createEl('p', { cls: 'etz-whatsnew-subtitle', text: whatsNewSubtitle() });
 
         // --- the newest items
         const fresh = contentEl.createEl('section', { cls: 'etz-whatsnew-new' });
-        const freshHeading = fresh.createEl('h3', { cls: 'etz-whatsnew-h', text: WHATS_NEW_RECENT_TITLE });
+        const freshHeading = fresh.createEl('h3', { cls: 'etz-whatsnew-h', text: whatsNewRecentTitle() });
         freshHeading.id = uniqueId('whatsnew-new');
         fresh.setAttr('aria-labelledby', freshHeading.id);
         const freshGrid = fresh.createDiv({ cls: ['etz-whatsnew-list', 'mod-grid'] });
@@ -90,18 +103,17 @@ export class WhatsNewModal extends Modal {
             // Never on a working install, but the popup must still open without its picture.
             figure.empty();
             figure.addClass('is-fallback');
-            figure.createDiv({ cls: 'etz-whatsnew-fallback', text: `The live example could not be drawn: ${errorText(e)}` });
+            figure.createDiv({ cls: 'etz-whatsnew-fallback', text: t('panels.whatsNew.drawFailed', { message: errorText(e) }) });
             this.live = null;
         }
         const caption = figure.createEl('figcaption', { cls: 'etz-whatsnew-caption' });
-        caption.appendText('Drag ');
-        caption.createEl('code', { text: 'a' });
-        caption.appendText(' or press play: the tangent slides, and the slope and the area are recalculated on the way.');
-        const chartGuide = guideById(WHATS_NEW_CHART_GUIDE);
-        if (chartGuide) {
-            caption.appendText(' Guide: ');
-            this.guideLink(caption, chartGuide.title, WHATS_NEW_CHART_GUIDE);
-        }
+        const chartGuide = localGuideById(WHATS_NEW_CHART_GUIDE);
+        appendWithPlaces(caption, chartGuide ? t('panels.whatsNew.captionWithGuide') : t('panels.whatsNew.caption'), {
+            slider: (into) => into.createEl('code', { text: 'a' }),
+            guide: (into) => {
+                if (chartGuide) this.guideLink(into, chartGuide.title, WHATS_NEW_CHART_GUIDE);
+            },
+        });
 
         const side = hero.createDiv({ cls: 'etz-whatsnew-side' });
         const liveList = side.createDiv({ cls: ['etz-whatsnew-list', 'mod-live'] });
@@ -109,7 +121,7 @@ export class WhatsNewModal extends Modal {
 
         // The chart beside, as its block writes it: these lines are the whole chart.
         const recipe = side.createDiv({ cls: 'etz-whatsnew-recipe' });
-        const recipeTitle = recipe.createDiv({ cls: 'etz-whatsnew-recipe-title', text: 'The chart, as you write it' });
+        const recipeTitle = recipe.createDiv({ cls: 'etz-whatsnew-recipe-title', text: t('panels.whatsNew.recipe') });
         recipeTitle.id = uniqueId('whatsnew-recipe');
         recipe.createEl('pre', { cls: 'etz-whatsnew-text', text: whatsNewText(), attr: { 'aria-labelledby': recipeTitle.id } });
 
@@ -117,12 +129,12 @@ export class WhatsNewModal extends Modal {
         const ai = contentEl.createEl('section', { cls: 'etz-whatsnew-ai' });
         this.item(ai, WHATS_NEW_AI);
         if (this.opts.actions.openAi) {
-            textButton(ai, { text: 'Open the AI tab', icon: 'bot', size: 'sm', onClick: () => this.run((a) => a.openAi?.()) });
+            textButton(ai, { text: t('panels.whatsNew.openAi'), icon: 'bot', size: 'sm', onClick: () => this.run((a) => a.openAi?.()) });
         }
 
         // --- the rest of version 4
         const more = contentEl.createEl('section', { cls: 'etz-whatsnew-more' });
-        const heading = more.createEl('h3', { cls: 'etz-whatsnew-h', text: 'Also new in version 4' });
+        const heading = more.createEl('h3', { cls: 'etz-whatsnew-h', text: t('panels.whatsNew.moreTitle') });
         heading.id = uniqueId('whatsnew-more');
         more.setAttr('aria-labelledby', heading.id);
         const grid = more.createDiv({ cls: ['etz-whatsnew-list', 'mod-grid'] });
@@ -131,11 +143,11 @@ export class WhatsNewModal extends Modal {
         // --- actions: a footer outside the scrolling content, so they stay in view in a low window
         const actions = modalEl.createDiv({ cls: 'etz-whatsnew-actions' });
         this.actionsEl = actions;
-        actions.createDiv({ cls: 'etz-whatsnew-hint', text: 'To see this again: the command "Show what\'s new in version 4", or the Help tab.' });
-        textButton(actions, { text: 'Close', onClick: () => this.close() });
-        textButton(actions, { text: 'Open the guides', icon: 'book-open', onClick: () => this.run((a) => a.openGuides()) });
+        actions.createDiv({ cls: 'etz-whatsnew-hint', text: t('panels.whatsNew.hint') });
+        textButton(actions, { text: t('common.close'), onClick: () => this.close() });
+        textButton(actions, { text: t('panels.whatsNew.openGuides'), icon: 'book-open', onClick: () => this.run((a) => a.openGuides()) });
         const tryIt = textButton(actions, {
-            text: 'Try an example',
+            text: t('panels.whatsNew.tryExample'),
             variant: 'cta',
             onClick: () => {
                 const chart = this.live ? this.live.chart() : whatsNewChart();
@@ -180,11 +192,11 @@ export class WhatsNewModal extends Modal {
         const body = row.createDiv({ cls: 'etz-whatsnew-item-body' });
         const head = body.createDiv({ cls: 'etz-whatsnew-item-head' });
         head.createSpan({ cls: 'etz-whatsnew-item-title', text: item.title });
-        const guide = item.guide ? guideById(item.guide) : undefined;
+        const guide = item.guide ? localGuideById(item.guide) : undefined;
         if (guide) {
             // The visible word is short; the name (and Obsidian's tooltip) says which guide.
-            const link = this.guideLink(head, 'Guide', guide.id, 'etz-whatsnew-item-guide');
-            link.el.setAttr('aria-label', `Guide: ${guide.title}`);
+            const link = this.guideLink(head, t('panels.whatsNew.guide'), guide.id, 'etz-whatsnew-item-guide');
+            link.el.setAttr('aria-label', t('panels.whatsNew.guideLabel', { title: guide.title }));
         }
         const text = body.createDiv({ cls: 'etz-whatsnew-item-text' });
         item.text.split('`').forEach((part, i) => {
@@ -227,7 +239,7 @@ class LiveExample {
 
         this.box = parent.createDiv({ cls: 'etz-whatsnew-chart' });
         this.box.setAttr('role', 'img');
-        const name = visuallyHidden(parent, 'Live chart: the cubic x^3 - 3x, its tangent at x = a and the area between them.');
+        const name = visuallyHidden(parent, t('panels.whatsNew.chartLabel'));
         name.id = uniqueId('whatsnew-chart');
         this.box.setAttr('aria-labelledby', name.id);
         this.render('full');
@@ -311,7 +323,7 @@ class LiveExample {
         const p = this.params[0];
         if (!p) return;
         const strip = parent.createDiv({ cls: ['etz-inline-strip', 'etz-whatsnew-strip'] });
-        const name = visuallyHidden(strip, 'Chart slider');
+        const name = visuallyHidden(strip, t('panels.whatsNew.sliderGroup'));
         name.id = uniqueId('whatsnew-sliders');
         strip.setAttr('role', 'group');
         strip.setAttr('aria-labelledby', name.id);
@@ -336,7 +348,7 @@ class LiveExample {
         this.slider.input.addEventListener('pointerdown', () => this.stopPlay(true));
         this.play = iconButton(strip, {
             icon: 'play',
-            label: `Play ${p.name}`,
+            label: t('panels.whatsNew.play', { name: p.name }),
             size: 'sm',
             pressed: false,
             cls: 'etz-whatsnew-play',
@@ -407,7 +419,7 @@ class LiveExample {
         const name = this.params[0] ? this.params[0].name : '';
         this.play?.setPressed(playing);
         this.play?.setIcon(playing ? 'pause' : 'play');
-        this.play?.setLabel(playing ? `Pause ${name}` : `Play ${name}`);
+        this.play?.setLabel(playing ? t('panels.whatsNew.pause', { name }) : t('panels.whatsNew.play', { name }));
     }
 }
 
@@ -415,4 +427,18 @@ class LiveExample {
 function onStep(v: number, p: Parameter): number {
     const stepped = p.step > 0 ? p.min + Math.round((v - p.min) / p.step) * p.step : v;
     return Number(formatDecimals(Math.min(p.max, Math.max(p.min, stepped)), 10));
+}
+
+/**
+ * Append `text`, a message whose named places are left unfilled, to `el`:
+ * its words as text, and each {place} made by its function, so a
+ * translation can put code or a link wherever its word order wants it.
+ */
+function appendWithPlaces(el: HTMLElement, text: string, places: Record<string, (into: HTMLElement) => void>): void {
+    text.split(/\{(\w+)\}/).forEach((part, i) => {
+        if (i % 2 === 0) {
+            if (part) el.appendText(part);
+        } else if (places[part]) places[part](el);
+        else el.appendText(`{${part}}`);
+    });
 }

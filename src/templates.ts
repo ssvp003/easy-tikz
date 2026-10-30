@@ -5,6 +5,7 @@
  * examples live in migrate.ts (EXAMPLES).
  */
 import type { ChartWords } from './text/words';
+import { LanguageSetting, MessageKey, t } from './i18n';
 
 export interface Template2D {
     name: string;
@@ -21,26 +22,31 @@ export interface Template3D {
     color?: string;
 }
 
+/** A built-in template: its name is read in the reader's language when it is shown. */
+function builtIn<T extends { name: string }>(key: MessageKey, rest: Omit<T, 'name'>): T {
+    return Object.defineProperty({ ...rest }, 'name', { get: () => t(key), enumerable: true }) as T;
+}
+
 export const BUILT_IN_2D: Template2D[] = [
-    { name: 'Parabola', expression: 'x^2', domain: '-3:3', color: 'black' },
-    { name: 'Cubic', expression: 'x^3 - 3x', domain: '-2:2', color: 'blue' },
-    { name: 'Sine wave', expression: 'sin(x)', domain: '0:2*pi', color: 'blue' },
-    { name: 'Cosine', expression: 'cos(x)', domain: '0:2*pi', color: 'teal' },
-    { name: 'Damped oscillation', expression: 'sin(x) * exp(-x/5)', domain: '0:20', color: 'purple' },
-    { name: 'Gaussian', expression: 'exp(-x^2)', domain: '-3:3', color: 'green' },
-    { name: 'Logistic', expression: '1 / (1 + exp(-x))', domain: '-6:6', color: 'teal' },
-    { name: 'Hyperbola', expression: '1 / x', domain: '0.1:5', color: 'orange' },
-    { name: 'Tangent (clipped)', expression: 'tan(x)', domain: '-1.5:1.5', color: 'red' },
-    { name: 'Upper half-circle', expression: 'sqrt(1 - x^2)', domain: '-1:1', color: 'teal' },
+    builtIn<Template2D>('problems.template.parabola', { expression: 'x^2', domain: '-3:3', color: 'black' }),
+    builtIn<Template2D>('problems.template.cubic', { expression: 'x^3 - 3x', domain: '-2:2', color: 'blue' }),
+    builtIn<Template2D>('problems.template.sine', { expression: 'sin(x)', domain: '0:2*pi', color: 'blue' }),
+    builtIn<Template2D>('problems.template.cosine', { expression: 'cos(x)', domain: '0:2*pi', color: 'teal' }),
+    builtIn<Template2D>('problems.template.damped', { expression: 'sin(x) * exp(-x/5)', domain: '0:20', color: 'purple' }),
+    builtIn<Template2D>('problems.template.gaussian', { expression: 'exp(-x^2)', domain: '-3:3', color: 'green' }),
+    builtIn<Template2D>('problems.template.logistic', { expression: '1 / (1 + exp(-x))', domain: '-6:6', color: 'teal' }),
+    builtIn<Template2D>('problems.template.hyperbola', { expression: '1 / x', domain: '0.1:5', color: 'orange' }),
+    builtIn<Template2D>('problems.template.tangent', { expression: 'tan(x)', domain: '-1.5:1.5', color: 'red' }),
+    builtIn<Template2D>('problems.template.halfCircle', { expression: 'sqrt(1 - x^2)', domain: '-1:1', color: 'teal' }),
 ];
 
 export const BUILT_IN_3D: Template3D[] = [
-    { name: 'Ripple', expression: 'sin(sqrt(x^2 + y^2))', xDomain: '-6:6', yDomain: '-6:6', color: 'blue' },
-    { name: 'Paraboloid', expression: 'x^2 + y^2', xDomain: '-3:3', yDomain: '-3:3', color: 'teal' },
-    { name: 'Saddle', expression: 'x*y', xDomain: '-3:3', yDomain: '-3:3', color: 'orange' },
-    { name: 'Gaussian bump', expression: 'exp(-(x^2 + y^2) / 4)', xDomain: '-3:3', yDomain: '-3:3', color: 'green' },
-    { name: 'Wave interference', expression: 'cos(x) + sin(y)', xDomain: '-6:6', yDomain: '-6:6', color: 'purple' },
-    { name: 'Pringle', expression: 'x^2 - y^2', xDomain: '-3:3', yDomain: '-3:3', color: 'red' },
+    builtIn<Template3D>('problems.template.ripple', { expression: 'sin(sqrt(x^2 + y^2))', xDomain: '-6:6', yDomain: '-6:6', color: 'blue' }),
+    builtIn<Template3D>('problems.template.paraboloid', { expression: 'x^2 + y^2', xDomain: '-3:3', yDomain: '-3:3', color: 'teal' }),
+    builtIn<Template3D>('problems.template.saddle', { expression: 'x*y', xDomain: '-3:3', yDomain: '-3:3', color: 'orange' }),
+    builtIn<Template3D>('problems.template.bump', { expression: 'exp(-(x^2 + y^2) / 4)', xDomain: '-3:3', yDomain: '-3:3', color: 'green' }),
+    builtIn<Template3D>('problems.template.interference', { expression: 'cos(x) + sin(y)', xDomain: '-6:6', yDomain: '-6:6', color: 'purple' }),
+    builtIn<Template3D>('problems.template.pringle', { expression: 'x^2 - y^2', xDomain: '-3:3', yDomain: '-3:3', color: 'red' }),
 ];
 
 export interface UserTemplate {
@@ -126,6 +132,8 @@ export interface PluginData {
     chartWords: ChartWords;
     /** Chart colours: the theme's own (default) or the fixed colours of the LaTeX export. */
     chartColours: 'theme' | 'export';
+    /** Setting "Interface language": Obsidian's (auto, default) or one the plugin has (src/i18n). */
+    interfaceLanguage: LanguageSetting;
 }
 
 export const DEFAULT_PLUGIN_DATA: PluginData = {
@@ -143,4 +151,5 @@ export const DEFAULT_PLUGIN_DATA: PluginData = {
     liveChart: true,
     chartWords: { words: {}, bundles: [], write: 'yours' },
     chartColours: 'theme',
+    interfaceLanguage: 'auto',
 };

@@ -123,9 +123,12 @@ export interface PanelHost {
     /**
      * Bottom bar 'Deleted R1 [Undo]' for 6 s. The modal also adds the undo
      * to the chart's history (Mod+Z). `extra` adds a second button
-     * ('Make slider' after a drag).
+     * ('Make slider' after a drag). Optional `subject`: what the message
+     * names ('R1'), for the texts of an undo that could not apply; without it
+     * an English message's words after its verb are taken, and other
+     * languages name the whole message.
      */
-    showUndo(message: string, undo: () => void, extra?: { text: string; run: () => void }): void;
+    showUndo(message: string, undo: () => void, extra?: { text: string; run: () => void }, subject?: string): void;
 
     /**
      * Optional (SPEC3 4.7): add an entry to the chart's undo history

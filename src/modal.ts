@@ -41,17 +41,17 @@ import { buildHitIndex } from './drag/hits';
 import { axisSliders, fieldText, refKey, resolveTarget, setFieldText } from './drag/targets';
 import { DragSession, PreparedDrag, nudge, prepareDrag, preparedServes } from './drag/session';
 import {
-    CHART_LABEL,
-    MAKE_SLIDER_BUTTON,
-    TOGGLE_LABEL,
-    UNDO_BUTTON,
-    joinNames,
+    chartLabel,
     lockChip,
     lockFor,
+    madeSliderSubject,
     madeSliderText,
+    makeSliderButton,
     selectAnnouncement,
     staleText,
     tipChip,
+    toggleLabel,
+    undoButton,
 } from './drag/describe';
 import { EditHistory, HistoryEntry, PatchIO, patchEntry } from './drag/history';
 import { makeSliderEdit } from './drag/numbers';
@@ -79,6 +79,7 @@ import {
     uniqueId,
     visuallyHidden,
 } from './ui/kit';
+import { MessageKey, language, t } from './i18n';
 
 /**
  * Optional state passed when the modal is opened by clicking an
@@ -105,12 +106,13 @@ function blockBody(block: string): string {
 
 type TabId = 'build' | 'chart' | 'code' | 'help' | 'ai';
 
-const TABS: Array<{ id: TabId; label: string }> = [
-    { id: 'build', label: 'Build' },
-    { id: 'chart', label: 'Chart' },
-    { id: 'code', label: 'Code' },
-    { id: 'help', label: 'Help' },
-    { id: 'ai', label: 'AI' },
+/** Tab labels are keys: the language is set after this module loads. */
+const TABS: Array<{ id: TabId; label: MessageKey }> = [
+    { id: 'build', label: 'editor.tabs.build' },
+    { id: 'chart', label: 'editor.tabs.chart' },
+    { id: 'code', label: 'editor.tabs.code' },
+    { id: 'help', label: 'editor.tabs.help' },
+    { id: 'ai', label: 'editor.tabs.ai' },
 ];
 
 /** Typing: full render this long after the last keystroke. */
@@ -306,7 +308,10 @@ function tokenValue(text: string): number | null {
     return Number.isFinite(v) ? v : null;
 }
 
-/** 'Moved R1 (2)' -> 'R1 (2)', 'Deleted R1' -> 'R1': the subject of an undo label, for the stale messages. */
+/**
+ * 'Moved R1 (2)' -> 'R1 (2)', 'Deleted R1' -> 'R1': what an English undo label names, for entries that
+ * carry no subject of their own (only English labels are split: other languages put the verb elsewhere).
+ */
 function labelSubject(label: string): string {
     const at = label.indexOf(' ');
     return at > 0 ? label.slice(at + 1) : label;
@@ -370,13 +375,14 @@ function str(v: unknown): string {
     return '';
 }
 
-/** 'Unsaved chart from 14:32' (today) or '... from Oct 3, 14:32'. */
+/** 'Unsaved chart from 14:32' (today) or '... from Oct 3, 14:32'; in English the system's date format, else the interface language's. */
 function draftTime(savedAt: number): string {
     const date = new Date(savedAt);
-    const time = date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+    const locale = language() === 'en' ? undefined : language();
+    const time = date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
     const today = new Date();
     if (date.toDateString() === today.toDateString()) return time;
-    return `${date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}, ${time}`;
+    return t('editor.draft.dateTime', { date: date.toLocaleDateString(locale, { month: 'short', day: 'numeric' }), time });
 }
 
 export class TikzModal extends Modal implements PanelHost {
@@ -722,12 +728,13 @@ export class TikzModal extends Modal implements PanelHost {
         };
     }
 
-    showUndo(message: string, undo: () => void, extra?: { text: string; run: () => void }): void {
+    showUndo(message: string, undo: () => void, extra?: { text: string; run: () => void }, subject?: string): void {
         // A running keyboard session goes into the history first (entries stay in the order of the edits).
         this.flushKeySession();
         // Deletes and other panel actions join the chart history, so Mod+Z undoes them too.
         const entry: HistoryEntry = {
             label: message,
+            subject,
             undo: () => {
                 undo();
                 return true;
@@ -760,7 +767,7 @@ export class TikzModal extends Modal implements PanelHost {
         this.hideUndo();
         el.createSpan({ cls: 'etz-undo-text', text: entry.label });
         textButton(el, {
-            text: UNDO_BUTTON,
+            text: undoButton(),
             size: 'sm',
             onClick: () => {
                 this.hideUndo();
@@ -817,9 +824,9 @@ export class TikzModal extends Modal implements PanelHost {
             return;
         }
         void confirmDialog(this.app, {
-            title: 'Replace the current chart?',
-            message: 'The chart in the editor is replaced. Charts already in your notes are not affected.',
-            confirmText: 'Replace',
+            title: t('editor.replace.title'),
+            message: t('editor.replace.message'),
+            confirmText: t('common.replace'),
             destructive: true,
         }).then((ok) => {
             if (!ok || !this.isOpen) return;
@@ -873,7 +880,7 @@ export class TikzModal extends Modal implements PanelHost {
 
         const { modalEl, contentEl } = this;
         modalEl.addClass('tikz-modal');
-        this.titleEl.setText('Easy TikZ editor');
+        this.titleEl.setText(t('editor.shell.title'));
         this.titleEl.addClass('etz-sr-only');
         contentEl.empty();
 
@@ -987,7 +994,7 @@ export class TikzModal extends Modal implements PanelHost {
     private buildHeader(editor: HTMLElement) {
         const header = editor.createDiv({ cls: 'etz-header' });
         this.dimSeg = segmented<'2d' | '3d'>(header, {
-            label: 'Chart type',
+            label: t('editor.header.chartType'),
             value: this.is3D() ? '3d' : '2d',
             options: [
                 { value: '2d', text: '2D' },
@@ -996,21 +1003,22 @@ export class TikzModal extends Modal implements PanelHost {
             onChange: (value) => this.setDimension(value === '3d'),
         });
         this.coordSeg = segmented<'cartesian' | 'polar'>(header, {
-            label: 'Coordinates',
+            label: t('editor.header.coordinates'),
             value: this.isPolar() ? 'polar' : 'cartesian',
             options: [
-                { value: 'cartesian', text: 'Cartesian' },
-                { value: 'polar', text: 'Polar' },
+                { value: 'cartesian', text: t('editor.header.cartesian') },
+                { value: 'polar', text: t('editor.header.polar') },
             ],
             onChange: (value) => this.setCoordinates(value),
         });
         header.createDiv({ cls: 'etz-header-spacer' });
-        const more = iconButton(header, { icon: 'more-horizontal', label: 'Examples and templates', tooltipPosition: 'bottom' });
+        const more = iconButton(header, { icon: 'more-horizontal', label: t('editor.header.examplesAndTemplates'), tooltipPosition: 'bottom' });
         menuFromButton(more.el, (menu) => this.fillMoreMenu(menu), 'end');
     }
 
     private fillMoreMenu(menu: Menu) {
-        menu.addItem((item) => item.setTitle('Examples').setIsLabel(true));
+        menu.addItem((item) => item.setTitle(t('editor.menu.examples')).setIsLabel(true));
+        // Example names stay as src/migrate.ts writes them (the Build and Help tabs show the same names).
         for (const example of EXAMPLES) {
             menu.addItem((item) =>
                 item
@@ -1022,7 +1030,7 @@ export class TikzModal extends Modal implements PanelHost {
         menu.addSeparator();
         menu.addItem((item) =>
             item
-                .setTitle('Manage saved templates...')
+                .setTitle(t('editor.menu.manageTemplates'))
                 .setIcon('bookmark')
                 .setDisabled(!this.plugin)
                 .onClick(() => {
@@ -1033,7 +1041,7 @@ export class TikzModal extends Modal implements PanelHost {
 
     private buildTabs(editor: HTMLElement) {
         const list = editor.createDiv({ cls: 'etz-tabs', attr: { role: 'tablist' } });
-        const listLabel = visuallyHidden(list, 'Editor sections');
+        const listLabel = visuallyHidden(list, t('editor.tabs.sections'));
         listLabel.id = uniqueId('tabs');
         list.setAttr('aria-labelledby', listLabel.id);
         const panels = editor.createDiv({ cls: 'etz-tabpanels' });
@@ -1041,7 +1049,7 @@ export class TikzModal extends Modal implements PanelHost {
         for (const tab of TABS) {
             const btn = list.createEl('button', { cls: 'etz-tab', attr: { type: 'button', role: 'tab' } });
             btn.id = uniqueId(`tab-${tab.id}`);
-            btn.createSpan({ cls: 'etz-tab-text', text: tab.label });
+            btn.createSpan({ cls: 'etz-tab-text', text: t(tab.label) });
             btn.createSpan({ cls: 'etz-tab-dot', attr: { 'aria-hidden': 'true' } });
             this.tabErrorLabels.set(tab.id, btn.createSpan({ cls: 'etz-sr-only' }));
             btn.addEventListener('click', () => this.showTab(tab.id));
@@ -1057,7 +1065,7 @@ export class TikzModal extends Modal implements PanelHost {
         // Roving tabindex: arrows / Home / End move between tabs and activate them.
         list.addEventListener('keydown', (e: KeyboardEvent) => {
             if (e.altKey || e.ctrlKey || e.metaKey) return;
-            const ids = TABS.map((t) => t.id);
+            const ids = TABS.map((tab) => tab.id);
             const at = ids.indexOf(this.activeTab);
             let next: number | null = null;
             if (e.key === 'ArrowRight') next = (at + 1) % ids.length;
@@ -1100,13 +1108,7 @@ export class TikzModal extends Modal implements PanelHost {
         this.pill2D?.toggleClass('tikz-hidden', this.is3D());
         this.pill3D?.toggleClass('tikz-hidden', !this.is3D());
         if (this.chartLabelEl) {
-            this.chartLabelEl.setText(
-                this.is3D()
-                    ? 'Chart preview. Drag or use the arrow keys to rotate.'
-                    : this.dragEditOn()
-                      ? CHART_LABEL
-                      : 'Chart preview. Drag or use the arrow keys to pan, scroll to zoom, drag labels to move them.'
-            );
+            this.chartLabelEl.setText(this.is3D() ? t('editor.preview.label3d') : this.dragEditOn() ? chartLabel() : t('editor.preview.label2d'));
         }
         this.chartEl?.toggleClass('is-3d', this.is3D());
         this.updateEmptyHint();
@@ -1161,7 +1163,7 @@ export class TikzModal extends Modal implements PanelHost {
         }
         const set = (id: TabId, on: boolean) => {
             this.tabButtons.get(id)?.toggleClass('has-error', on);
-            this.tabErrorLabels.get(id)?.setText(on ? ' (has problems)' : '');
+            this.tabErrorLabels.get(id)?.setText(on ? ` ${t('editor.tabs.hasProblems')}` : '');
         };
         set('build', buildErr);
         set('chart', chartErr);
@@ -1191,7 +1193,7 @@ export class TikzModal extends Modal implements PanelHost {
         });
 
         this.emptyEl = stage.createDiv({ cls: ['etz-preview-empty', 'tikz-hidden'], attr: { 'aria-hidden': 'true' } });
-        this.emptyEl.createDiv({ cls: 'etz-preview-empty-title', text: 'Your chart appears here' });
+        this.emptyEl.createDiv({ cls: 'etz-preview-empty-title', text: t('editor.preview.emptyTitle') });
         this.emptyEl.createDiv({ cls: 'etz-preview-empty-hint' });
 
         // Status chip (top-left; the top-right corner stays free for the modal's close button).
@@ -1211,34 +1213,34 @@ export class TikzModal extends Modal implements PanelHost {
         this.readoutEl = stage.createDiv({ cls: ['etz-readout', 'tikz-hidden'], attr: { 'aria-hidden': 'true' } });
 
         const pill = stage.createDiv({ cls: 'etz-pill' });
-        iconButton(pill, { icon: 'maximize-2', label: 'Fit ranges to the functions', tooltipPosition: 'top', onClick: () => this.autoFit() });
-        iconButton(pill, { icon: 'rotate-ccw', label: 'Reset ranges', tooltipPosition: 'top', onClick: () => this.resetRanges() });
+        iconButton(pill, { icon: 'maximize-2', label: t('editor.preview.fit'), tooltipPosition: 'top', onClick: () => this.autoFit() });
+        iconButton(pill, { icon: 'rotate-ccw', label: t('editor.preview.resetRanges'), tooltipPosition: 'top', onClick: () => this.resetRanges() });
         this.pill2D = pill.createDiv({ cls: 'etz-pill-group' });
         this.gridBtn = iconButton(this.pill2D, {
             icon: 'grid',
-            label: 'Major grid',
+            label: t('editor.preview.majorGrid'),
             pressed: this.settings.getValue('showLargeGrid') === true,
             tooltipPosition: 'top',
             onClick: () => this.toggleGrid(),
         });
         this.lockBtn = iconButton(this.pill2D, {
             icon: 'lock-open',
-            label: 'Lock pan and zoom',
+            label: t('editor.preview.lockPanZoom'),
             pressed: false,
             tooltipPosition: 'top',
             onClick: () => this.togglePanLock(),
         });
         this.dragToggle = iconButton(this.pill2D, {
             icon: 'mouse-pointer-2',
-            label: TOGGLE_LABEL,
+            label: toggleLabel(),
             pressed: this.dragEditOn(),
             tooltipPosition: 'top',
             onClick: () => this.toggleDragEdit(),
         });
         this.pill3D = pill.createDiv({ cls: 'etz-pill-group' });
-        iconButton(this.pill3D, { icon: 'zoom-in', label: 'Zoom in', tooltipPosition: 'top', onClick: () => this.zoom3D(ZOOM_3D_STEP) });
-        iconButton(this.pill3D, { icon: 'zoom-out', label: 'Zoom out', tooltipPosition: 'top', onClick: () => this.zoom3D(1 / ZOOM_3D_STEP) });
-        iconButton(this.pill3D, { icon: 'scan', label: 'Reset zoom', tooltipPosition: 'top', onClick: () => this.zoom3D(0) });
+        iconButton(this.pill3D, { icon: 'zoom-in', label: t('editor.preview.zoomIn'), tooltipPosition: 'top', onClick: () => this.zoom3D(ZOOM_3D_STEP) });
+        iconButton(this.pill3D, { icon: 'zoom-out', label: t('editor.preview.zoomOut'), tooltipPosition: 'top', onClick: () => this.zoom3D(1 / ZOOM_3D_STEP) });
+        iconButton(this.pill3D, { icon: 'scan', label: t('editor.preview.resetZoom'), tooltipPosition: 'top', onClick: () => this.zoom3D(0) });
     }
 
     private onResize() {
@@ -1268,7 +1270,7 @@ export class TikzModal extends Modal implements PanelHost {
         const empty = !this.hasContent();
         this.emptyEl.toggleClass('tikz-hidden', !empty);
         const hint = this.emptyEl.querySelector('.etz-preview-empty-hint');
-        if (hint) hint.setText(this.is3D() ? 'Drag to rotate' : 'Drag to pan, scroll to zoom');
+        if (hint) hint.setText(t(this.is3D() ? 'editor.preview.emptyHint3d' : 'editor.preview.emptyHint2d'));
     }
 
     // ================================================================ rendering
@@ -1319,7 +1321,7 @@ export class TikzModal extends Modal implements PanelHost {
             issues = config.is3D ? this.render3D(config, math, quality) : this.render2D(config, math, quality);
         } catch (e) {
             // Keep the last good drawing; the problem goes to the status chip, never a Notice.
-            issues = [{ source: 'chart', message: `Preview failed: ${errorText(e)}`, severity: 'error' }];
+            issues = [{ source: 'chart', message: t('editor.status.previewFailed', { error: errorText(e) }), severity: 'error' }];
         }
         if (quality !== 'full') return;
         this.updateEmptyHint();
@@ -1485,7 +1487,7 @@ export class TikzModal extends Modal implements PanelHost {
         const text = issueText(first, ' · ');
         chipEl.toggleClass('is-info', first.severity !== 'error');
         this.statusText.setText(text);
-        this.statusMore.setText(this.issues.length > 1 ? `+${this.issues.length - 1} more` : '');
+        this.statusMore.setText(this.issues.length > 1 ? t('editor.status.more', { count: this.issues.length - 1 }) : '');
         chipEl.title = this.issues.map((i) => issueText(i, ' · ')).join('\n');
     }
 
@@ -1504,9 +1506,10 @@ export class TikzModal extends Modal implements PanelHost {
         this.renderStatus();
     }
 
-    /** Switch tab, expand the card, focus the field and select the offending name. */
+    /** Switch tab, expand the card, focus the field and select the offending name ('k' in English messages, 「k」 in Japanese ones). */
     private focusIssue(issue: SceneIssue) {
-        const selectText = /'([^']+)'/.exec(issue.message)?.[1];
+        const quoted = /'([^']+)'|「([^」]+)」/.exec(issue.message);
+        const selectText = quoted ? (quoted[1] ?? quoted[2]) : undefined;
         const handle = issue.field === undefined ? null : Array.from(this.fields).find((f) => f.source === issue.source && f.field === issue.field);
         if (issue.source === 'chart') {
             this.showTab('chart');
@@ -1810,7 +1813,7 @@ export class TikzModal extends Modal implements PanelHost {
         const plugin = this.plugin;
         if (plugin) {
             plugin.data.dragEdit = on;
-            void plugin.saveSettings().catch(() => new Notice('Could not update the plugin data file.'));
+            void plugin.saveSettings().catch(() => new Notice(t('editor.notice.dataFile')));
         } else {
             this.dragEditLocal = on;
         }
@@ -2622,7 +2625,7 @@ export class TikzModal extends Modal implements PanelHost {
         const entry = patchEntry(commit, this.patchIO());
         this.history.push(entry);
         const offer = commit.makeSlider;
-        this.showUndoBar(entry, offer ? { text: MAKE_SLIDER_BUTTON, run: () => this.makeSlider(offer) } : undefined);
+        this.showUndoBar(entry, offer ? { text: makeSliderButton(), run: () => this.makeSlider(offer) } : undefined);
         this.announce(commit.announce);
         if (this.activeTab === 'build') this.build?.flash?.(target.cardSource);
     }
@@ -2851,41 +2854,41 @@ export class TikzModal extends Modal implements PanelHost {
         this.flushKeySession();
         const r = this.history.undo();
         if (!r) {
-            this.showMessage('Nothing to undo');
+            this.showMessage(t('editor.undo.nothingToUndo'));
             return;
         }
         const stale = this.staleMessage(r.entry, r.applied, false);
         if (stale) this.showMessage(stale);
-        else this.showMessage(`Undone: ${r.entry.label}`, this.history.canRedo ? { text: 'Redo', run: () => this.redoLast() } : undefined);
+        else this.showMessage(t('editor.undo.undone', { label: r.entry.label }), this.history.canRedo ? { text: t('common.redo'), run: () => this.redoLast() } : undefined);
     }
 
     private redoLast() {
         this.flushKeySession();
         const r = this.history.redo();
         if (!r) {
-            this.showMessage('Nothing to redo');
+            this.showMessage(t('editor.undo.nothingToRedo'));
             return;
         }
         const stale = this.staleMessage(r.entry, r.applied, true);
         if (stale) this.showMessage(stale);
-        else this.showMessage(`Redone: ${r.entry.label}`, { text: UNDO_BUTTON, run: () => this.undoLast() });
+        else this.showMessage(t('editor.undo.redone', { label: r.entry.label }), { text: undoButton(), run: () => this.undoLast() });
     }
 
     /**
      * Bar text when an undo / redo skipped edited fields (SPEC3 1.8):
      * 'Nothing undone: R1 (2) was edited since', 'Undone, except R1 (2),
-     * which was edited since'. Null when nothing was skipped.
+     * which was edited since'. Null when nothing was skipped. What it names
+     * comes from the entry's data (stale names, subject), never from
+     * splitting a translated label.
      */
     private staleMessage(entry: HistoryEntry, applied: boolean, redo: boolean): string | null {
         const names = entry.stale ?? [];
-        if (!redo) {
-            const text = staleText(names, applied);
-            if (text) return text;
-            return applied ? null : `Nothing undone: ${labelSubject(entry.label)} was edited since`;
-        }
-        const verb = names.length > 1 ? 'were' : 'was';
-        if (names.length) return applied ? `Redone, except ${joinNames(names)}, which ${verb} edited since` : `Nothing redone: ${joinNames(names)} ${verb} edited since`;
-        return applied ? null : `Nothing redone: ${labelSubject(entry.label)} was edited since`;
+        if (names.length) return staleText(names, applied, redo);
+        if (applied) return null;
+        // Nothing restored and nothing named as edited: the entry's own subject (drags, Make slider, panels that pass one).
+        if (entry.subject) return staleText([entry.subject], false, redo);
+        if (language() === 'en') return staleText([labelSubject(entry.label)], false, redo);
+        return t(redo ? 'editor.undo.notRedone' : 'editor.undo.notUndone', { label: entry.label });
     }
 
     /** History patches read and write the live settings, then commit (cards, dock, validators, render). */
@@ -2940,7 +2943,7 @@ export class TikzModal extends Modal implements PanelHost {
             edits.push({ ref: site.ref, before, after: makeSliderEdit(before, site.span, name) });
         }
         if (!edits.length) {
-            this.showMessage('Nothing changed: the number was edited since');
+            this.showMessage(t('editor.undo.numberEdited'));
             return;
         }
         for (const edit of edits) setFieldText(edit.ref, data, edit.after);
@@ -2949,6 +2952,7 @@ export class TikzModal extends Modal implements PanelHost {
         this.settings.setValue('parameters', data.parameters.concat([param]));
         const entry: HistoryEntry = {
             label: madeSliderText(name, value),
+            subject: madeSliderSubject(name, value),
             undo: () => {
                 const now = this.chartData();
                 let restored = false;
@@ -3202,9 +3206,10 @@ export class TikzModal extends Modal implements PanelHost {
         lock.setPressed(this.panLocked);
         lock.setIcon(this.panLocked ? 'lock' : 'lock-open');
         const pinned = (['x', 'y'] as const).filter((a) => !this.axisFree(a));
-        let label = this.panLocked ? 'Unlock pan and zoom' : 'Lock pan and zoom';
-        if (pinned.length === 2) label += ' (both ranges use expressions, so they stay fixed)';
-        else if (pinned.length === 1) label += ` (the ${pinned[0]} range uses an expression, so it stays fixed)`;
+        const action = t(this.panLocked ? 'editor.preview.unlockPanZoom' : 'editor.preview.lockPanZoom');
+        let label = action;
+        if (pinned.length === 2) label = t('editor.preview.bothRangesFixed', { action });
+        else if (pinned.length === 1) label = t('editor.preview.rangeFixed', { action, axis: pinned[0] });
         lock.setLabel(label);
         this.chartEl?.toggleClass('is-pan-off', this.panLocked || pinned.length === 2);
     }
@@ -3258,7 +3263,7 @@ export class TikzModal extends Modal implements PanelHost {
             math = this.math();
             math.setParams(this.list<Parameter>('parameters'));
         } catch (e) {
-            if (!quiet) this.flashStatus(`Cannot fit: ${errorText(e)}`);
+            if (!quiet) this.flashStatus(t('editor.status.cannotFit', { error: errorText(e) }));
             return;
         }
         const view = this.currentView() ?? this.settings.resolveView(math).view;
@@ -3313,7 +3318,7 @@ export class TikzModal extends Modal implements PanelHost {
 
         if (!xs.length) {
             if (quiet) return;
-            this.flashStatus(this.is3D() ? 'Nothing to fit yet: add a surface first.' : 'Nothing to fit yet: add a function first.');
+            this.flashStatus(t(this.is3D() ? 'editor.status.nothingToFit3d' : 'editor.status.nothingToFit2d'));
             return;
         }
         const axes: Array<{ axis: 'x' | 'y' | 'z'; values: number[]; trim: boolean }> = [
@@ -3332,7 +3337,7 @@ export class TikzModal extends Modal implements PanelHost {
             wrote = true;
         }
         if (!wrote) {
-            if (!quiet) this.flashStatus('The ranges use expressions: edit them in Chart > Ranges.');
+            if (!quiet) this.flashStatus(t('editor.status.rangesUseExpressions'));
             return;
         }
         this.chartPanel?.syncView();
@@ -3343,16 +3348,16 @@ export class TikzModal extends Modal implements PanelHost {
 
     private buildActionBar(shell: HTMLElement) {
         const bar = shell.createDiv({ cls: 'etz-actionbar' });
-        const copySvg = textButton(bar, { text: 'Copy SVG', onClick: () => void this.copySvg(copySvg) });
-        const copyPng = textButton(bar, { text: 'Copy PNG', onClick: () => void this.copyPng(copyPng) });
+        const copySvg = textButton(bar, { text: t('editor.actions.copySvg'), onClick: () => void this.copySvg(copySvg) });
+        const copyPng = textButton(bar, { text: t('editor.actions.copyPng'), onClick: () => void this.copyPng(copyPng) });
         const copyTikz = textButton(bar, {
-            text: 'Copy TikZ',
+            text: t('editor.actions.copyTikz'),
             onClick: () => {
                 let text: string;
                 try {
                     text = this.codePanel ? this.codePanel.copyText() : this.generateCode();
                 } catch (e) {
-                    this.flashStatus(`Could not generate TikZ: ${errorText(e)}`);
+                    this.flashStatus(t('editor.status.tikzFailed', { error: errorText(e) }));
                     return;
                 }
                 void this.copyText(text, copyTikz);
@@ -3366,9 +3371,9 @@ export class TikzModal extends Modal implements PanelHost {
     private syncCta() {
         const btn = this.ctaBtn;
         if (!btn) return;
-        const text = this.sourceFile ? 'Save changes' : 'Insert into note';
+        const text = t(this.sourceFile ? 'editor.actions.save' : 'editor.actions.insert');
         btn.setText(text);
-        btn.el.setAttr('aria-label', `${text} (${Platform.isMacOS ? 'Cmd' : 'Ctrl'}+Enter)`);
+        btn.el.setAttr('aria-label', t('editor.actions.shortcut', { action: text, key: Platform.isMacOS ? 'Cmd' : 'Ctrl' }));
     }
 
     /** Swap a button's text for a moment ("Copied"); UI state instead of a Notice. */
@@ -3387,9 +3392,9 @@ export class TikzModal extends Modal implements PanelHost {
     private async copyText(text: string, button: TextButtonHandle) {
         try {
             await navigator.clipboard.writeText(text);
-            this.flashButton(button, 'Copied');
+            this.flashButton(button, t('common.copied'));
         } catch {
-            new Notice('Could not copy to the clipboard.');
+            new Notice(t('editor.notice.clipboard'));
         }
     }
 
@@ -3428,19 +3433,19 @@ export class TikzModal extends Modal implements PanelHost {
         try {
             clone = this.prepareSvgForExport();
         } catch (e) {
-            this.flashStatus(`Could not export the preview: ${errorText(e)}`);
+            this.flashStatus(t('editor.status.exportFailed', { error: errorText(e) }));
             return;
         }
         if (!clone) {
-            new Notice('Nothing to copy yet: the chart has not rendered.');
+            new Notice(t('editor.notice.notRendered'));
             return;
         }
         const svgString = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n' + new XMLSerializer().serializeToString(clone);
         try {
             await navigator.clipboard.writeText(svgString);
-            this.flashButton(button, 'Copied');
+            this.flashButton(button, t('common.copied'));
         } catch {
-            new Notice('Could not copy the SVG to the clipboard.');
+            new Notice(t('editor.notice.svgClipboard'));
         }
     }
 
@@ -3449,11 +3454,11 @@ export class TikzModal extends Modal implements PanelHost {
         try {
             clone = this.prepareSvgForExport();
         } catch (e) {
-            this.flashStatus(`Could not export the preview: ${errorText(e)}`);
+            this.flashStatus(t('editor.status.exportFailed', { error: errorText(e) }));
             return;
         }
         if (!clone) {
-            new Notice('Nothing to copy yet: the chart has not rendered.');
+            new Notice(t('editor.notice.notRendered'));
             return;
         }
         try {
@@ -3461,9 +3466,9 @@ export class TikzModal extends Modal implements PanelHost {
             const pngBlob = await svgToPng(clone, 2);
             // Older lib.dom.d.ts in this toolchain requires Promise<Blob>; the runtime accepts a Blob too.
             await navigator.clipboard.write([new ClipboardItem({ 'image/png': Promise.resolve(pngBlob) })]);
-            this.flashButton(button, 'Copied');
+            this.flashButton(button, t('common.copied'));
         } catch (e) {
-            new Notice(`Could not copy the PNG: ${errorText(e)}`);
+            new Notice(t('editor.notice.pngFailed', { error: errorText(e) }));
         }
     }
 
@@ -3498,11 +3503,11 @@ export class TikzModal extends Modal implements PanelHost {
                     return content.slice(0, at) + block + content.slice(at + original.length);
                 });
             } catch (e) {
-                new Notice(`Could not save the chart to the file: ${errorText(e)}`);
+                new Notice(t('editor.notice.saveFailed', { error: errorText(e) }));
                 return;
             }
             if (!found) {
-                new Notice('Could not find the original chart in the note (it may have been edited), so it was inserted at the current position.');
+                new Notice(t('editor.notice.blockNotFound'));
                 this.insertAtCursor(block);
                 return;
             }
@@ -3517,7 +3522,7 @@ export class TikzModal extends Modal implements PanelHost {
     private insertAtCursor(block: string) {
         const view = this.app.workspace.getActiveViewOfType(MarkdownView);
         if (!view) {
-            new Notice('No active note to insert into. Open a note and try again.');
+            new Notice(t('editor.notice.noActiveNote'));
             return;
         }
         view.editor.replaceSelection(block + '\n');
@@ -3533,7 +3538,7 @@ export class TikzModal extends Modal implements PanelHost {
         const draft = plugin?.data?.draft;
         if (plugin && draft && (draft.savedAt === this.ownDraftAt || this.draftMatchesBlock(draft))) {
             plugin.data.draft = null;
-            void plugin.saveSettings().catch(() => new Notice('Could not update the plugin data file.'));
+            void plugin.saveSettings().catch(() => new Notice(t('editor.notice.dataFile')));
         }
         this.close();
     }
@@ -3571,7 +3576,7 @@ export class TikzModal extends Modal implements PanelHost {
             await plugin.saveSettings();
         } catch {
             // Tell once per session; a failing disk must not raise a Notice every second.
-            if (!this.draftSaveFailed) new Notice('Could not autosave the chart draft.');
+            if (!this.draftSaveFailed) new Notice(t('editor.notice.autosaveFailed'));
             this.draftSaveFailed = true;
         }
     }
@@ -3589,16 +3594,16 @@ export class TikzModal extends Modal implements PanelHost {
         if (this.openedFromBlock && !this.draftMatchesBlock(draft)) return;
         if (JSON.stringify(draft.data) === JSON.stringify(this.settings.serialize())) return;
         const when = draftTime(draft.savedAt);
-        let text = `Unsaved chart from ${when}`;
-        if (this.openedFromBlock) text = `Unsaved changes from ${when}`;
-        else if (draft.sourcePath) text = `Unsaved edit of a chart in ${draft.sourcePath.replace(/^.*\//, '').replace(/\.md$/, '')} from ${when}`;
+        let text = t('editor.draft.chart', { time: when });
+        if (this.openedFromBlock) text = t('editor.draft.changes', { time: when });
+        else if (draft.sourcePath) text = t('editor.draft.edit', { note: draft.sourcePath.replace(/^.*\//, '').replace(/\.md$/, ''), time: when });
         // Keep the draft in memory: autosaves of this session may overwrite the stored one.
         const kept: ChartDraft = { ...draft, data: cloneData(draft.data) };
         this.draftBanner = banner(slot, {
             text,
             actions: [
-                { text: 'Restore', cta: true, onClick: () => this.restoreDraft(kept) },
-                { text: 'Discard', onClick: () => this.discardDraft(kept) },
+                { text: t('common.restore'), cta: true, onClick: () => this.restoreDraft(kept) },
+                { text: t('common.discard'), onClick: () => this.discardDraft(kept) },
             ],
         });
     }
@@ -3629,9 +3634,9 @@ export class TikzModal extends Modal implements PanelHost {
             return;
         }
         void confirmDialog(this.app, {
-            title: 'Restore the unsaved chart?',
-            message: 'Your changes in this editor are replaced by the restored chart.',
-            confirmText: 'Restore',
+            title: t('editor.draft.restoreTitle'),
+            message: t('editor.draft.restoreMessage'),
+            confirmText: t('common.restore'),
             destructive: true,
         }).then((ok) => {
             if (ok && this.isOpen) apply();
@@ -3643,7 +3648,7 @@ export class TikzModal extends Modal implements PanelHost {
         const plugin = this.plugin;
         if (!plugin || !plugin.data.draft || plugin.data.draft.savedAt !== draft.savedAt) return;
         plugin.data.draft = null;
-        void plugin.saveSettings().catch(() => new Notice('Could not update the plugin data file.'));
+        void plugin.saveSettings().catch(() => new Notice(t('editor.notice.dataFile')));
     }
 
     // ================================================================ chart replacement
@@ -3705,7 +3710,7 @@ class TemplatesModal extends Modal {
 
     onOpen() {
         this.modalEl.addClass('etz-dialog', 'etz-tokens', 'etz-templates-dialog');
-        this.titleEl.setText('Saved templates');
+        this.titleEl.setText(t('editor.templates.title'));
         this.renderList();
     }
 
@@ -3714,24 +3719,24 @@ class TemplatesModal extends Modal {
         contentEl.empty();
         const templates = this.plugin.data.userTemplates ?? [];
         if (!templates.length) {
-            contentEl.createDiv({ cls: 'etz-dialog-desc', text: 'No saved templates yet. Save a function as a template from its card menu.' });
+            contentEl.createDiv({ cls: 'etz-dialog-desc', text: t('editor.templates.empty') });
             return;
         }
         const list = contentEl.createDiv({ cls: 'etz-template-list', attr: { role: 'list' } });
-        templates.forEach((t, index) => {
+        templates.forEach((template, index) => {
             const row = list.createDiv({ cls: 'etz-template-row', attr: { role: 'listitem' } });
             const text = row.createDiv({ cls: 'etz-template-text' });
-            text.createDiv({ cls: 'etz-template-name', text: t.name });
-            text.createDiv({ cls: 'etz-template-meta', text: `${t.is3D ? '3D' : '2D'} · ${t.expression}` });
+            text.createDiv({ cls: 'etz-template-name', text: template.name });
+            text.createDiv({ cls: 'etz-template-meta', text: `${template.is3D ? '3D' : '2D'} · ${template.expression}` });
             iconButton(row, {
                 icon: 'trash-2',
-                label: `Delete ${t.name}`,
+                label: t('editor.templates.delete', { name: template.name }),
                 onClick: () => {
                     const next = templates.filter((_, i) => i !== index);
                     void this.plugin
                         .saveUserTemplates(next)
                         .then(() => this.renderList())
-                        .catch(() => new Notice('Could not update the plugin data file.'));
+                        .catch(() => new Notice(t('editor.notice.dataFile')));
                 },
             });
         });

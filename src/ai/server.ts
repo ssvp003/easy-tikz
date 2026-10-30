@@ -15,10 +15,15 @@
  *     heading or in place of a placeholder line) and replace them, never
  *     anything else and never in files with instructions for AI agents, and
  *     the plugin shows a notice for every write.
+ *
+ * Everything it answers is English (the tools run inside inEnglish, see
+ * src/ai/mcp.ts); only the error of start(), which the settings show to the
+ * person, is in their language.
  */
 import { guideWithWords } from '../text/words';
 import GUIDE from '../../docs/ai.md';
 import { ChartHost, SERVER_NAME, callTool, handleMcp, toolList } from './mcp';
+import { inEnglish, t } from '../i18n';
 
 /** Default port; the settings can change it. */
 export const DEFAULT_AI_PORT = 27150;
@@ -134,7 +139,7 @@ export class AiServer {
         return new Promise((resolve, reject) => {
             const fail = (e: HttpError) => {
                 this.server = null;
-                reject(new Error(e.code === 'EADDRINUSE' ? `Port ${this.opts.port} is already in use. Choose another one in the settings.` : e.message));
+                reject(new Error(e.code === 'EADDRINUSE' ? t('problems.ai.portInUse', { port: this.opts.port }) : e.message));
             };
             server.once('error', fail);
             server.listen(this.opts.port, '127.0.0.1', () => {
@@ -178,7 +183,7 @@ export class AiServer {
             if (head.method === 'GET' && path === '/') {
                 return send(res, 200, { name: SERVER_NAME, mcp: '/mcp', guide: '/guide', tools: '/tools', call: 'POST /tools/<name> with the arguments as JSON' });
             }
-            if (head.method === 'GET' && path === '/guide') return sendText(res, 200, guideWithWords(GUIDE), 'text/markdown; charset=utf-8');
+            if (head.method === 'GET' && path === '/guide') return sendText(res, 200, inEnglish(() => guideWithWords(GUIDE)), 'text/markdown; charset=utf-8');
             if (head.method === 'GET' && path === '/tools') return send(res, 200, { tools: toolList() });
             if (path === '/mcp') {
                 if (head.method !== 'POST') {

@@ -5,6 +5,7 @@
  * trailing commas, or no "v".
  */
 import { TextProblem, isChartText, parseChartText } from './text/parse';
+import { t } from './i18n';
 
 export type BlockFormat = 'text' | 'json';
 
@@ -20,7 +21,7 @@ export function readBlock(body: string): BlockChart | string {
     if (isChartText(body)) {
         const lines = body.split(/\r?\n/).map((l) => l.trim());
         if (!lines.some((l) => l && !l.startsWith('%') && !l.startsWith('//') && !l.startsWith('#'))) {
-            return 'the block is empty. Write one line per object, such as plot f(x) = x^2';
+            return t('problems.block.empty');
         }
         const parsed = parseChartText(body);
         return { data: parsed.data, format: 'text', problems: parsed.problems };
@@ -30,9 +31,9 @@ export function readBlock(body: string): BlockChart | string {
         // Comments and trailing commas (blocks typed by hand or pasted from an AI chat) are fine.
         parsed = parseLenientJson(body);
     } catch (e) {
-        return e instanceof Error ? e.message : 'invalid JSON';
+        return e instanceof Error ? e.message : t('problems.block.invalidJson');
     }
-    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return 'the block must contain a JSON object';
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return t('problems.block.notAnObject');
     const data = parsed as Record<string, unknown>;
     // No "v" and nothing of a 3.x save: a version 4 chart someone wrote by hand.
     return { data: impliedV4(data) ? { v: 4, ...data } : data, format: 'json', problems: [] };
