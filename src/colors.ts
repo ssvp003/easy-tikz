@@ -1,4 +1,6 @@
 import type { FillPattern } from './types';
+import { t } from './i18n';
+import type { MessageKey } from './i18n';
 
 /**
  * Shared color palette for the plugin.
@@ -26,18 +28,30 @@ export const COLOR_MAP: Record<string, string> = {
     magenta: 'var(--etz-magenta, #d63384)',
 };
 
-export const COLOR_OPTIONS: Record<string, string> = {
-    black: 'Auto (text colour, exports black)',
-    gray: 'Gray',
-    red: 'Red',
-    orange: 'Orange',
-    brown: 'Brown',
-    green: 'Green',
-    teal: 'Teal',
-    blue: 'Blue',
-    purple: 'Purple',
-    magenta: 'Magenta',
-};
+/**
+ * Display names in the reader's language, read each time they are used: the
+ * language is set when the plugin loads, after this module. The keys are
+ * what charts store and stay as they are.
+ */
+function shownNames(keys: Record<string, MessageKey>): Record<string, string> {
+    const names: Record<string, string> = {};
+    for (const [value, key] of Object.entries(keys)) Object.defineProperty(names, value, { get: () => t(key), enumerable: true });
+    return names;
+}
+
+/** Colour names of the swatch picker, per palette key. */
+export const COLOR_OPTIONS: Record<string, string> = shownNames({
+    black: 'build.color.black',
+    gray: 'build.color.gray',
+    red: 'build.color.red',
+    orange: 'build.color.orange',
+    brown: 'build.color.brown',
+    green: 'build.color.green',
+    teal: 'build.color.teal',
+    blue: 'build.color.blue',
+    purple: 'build.color.purple',
+    magenta: 'build.color.magenta',
+});
 
 /**
  * TikZ colour per palette key. xcolor's own `red`, `green`, `teal`, ... are
@@ -59,22 +73,33 @@ export const TIKZ_COLOR_DEFS: Record<string, { name: string; hex: string }> = {
     magenta: { name: 'etMagenta', hex: 'D63384' },
 };
 
-export const THICKNESS_OPTIONS: Record<string, string> = {
-    'very thin': 'Very Thin',
-    thin: 'Thin',
-    thick: 'Thick',
-    'very thick': 'Very Thick',
-};
+/** Line thickness names, per stored thickness (the TikZ option). */
+export const THICKNESS_OPTIONS: Record<string, string> = shownNames({
+    'very thin': 'build.thickness.veryThin',
+    thin: 'build.thickness.thin',
+    thick: 'build.thickness.thick',
+    'very thick': 'build.thickness.veryThick',
+});
+
+/** A fill pattern choice whose text is read when the menu is built. */
+function patternOption(value: FillPattern, key: MessageKey): { value: FillPattern; text: string } {
+    return {
+        value,
+        get text() {
+            return t(key);
+        },
+    };
+}
 
 /** Fill pattern choices, shared by the function and region cards. */
 export const FILL_PATTERN_OPTIONS: { value: FillPattern; text: string }[] = [
-    { value: 'solid', text: 'Solid' },
-    { value: 'horizontal', text: 'Horizontal lines' },
-    { value: 'vertical', text: 'Vertical lines' },
-    { value: 'crosshatch', text: 'Crosshatch' },
-    { value: 'dots', text: 'Dots' },
-    { value: 'north-east', text: 'Diagonal lines /' },
-    { value: 'north-west', text: 'Diagonal lines \\' },
+    patternOption('solid', 'build.pattern.solid'),
+    patternOption('horizontal', 'build.pattern.horizontal'),
+    patternOption('vertical', 'build.pattern.vertical'),
+    patternOption('crosshatch', 'build.pattern.crosshatch'),
+    patternOption('dots', 'build.pattern.dots'),
+    patternOption('north-east', 'build.pattern.northEast'),
+    patternOption('north-west', 'build.pattern.northWest'),
 ];
 
 export const THICKNESS_MAP: Record<string, number> = {

@@ -41,6 +41,7 @@ import {
     textInput,
     thicknessPicker,
 } from './kit';
+import { t } from '../i18n';
 
 /** Referenceable name: letter first, then letters, digits, underscores. */
 const NAME_RE = /^[A-Za-z][A-Za-z0-9_]*$/;
@@ -148,27 +149,27 @@ function surfaceList(host: PanelHost): Function3DParameters[] {
  * item being renamed, so its own current name does not count as taken.
  */
 export function functionNameProblem(host: PanelHost, name: string, self: object | null): string | null {
-    if (!name) return 'Enter a name';
-    if (!NAME_RE.test(name)) return 'Start with a letter, then letters, digits or _';
-    if (RESERVED_NAMES.has(name)) return `${name} is a reserved name`;
-    if (isAxisName(host, name)) return `${name} is an axis variable`;
+    if (!name) return t('common.enterName');
+    if (!NAME_RE.test(name)) return t('build.name.startWithLetter');
+    if (RESERVED_NAMES.has(name)) return t('build.name.reserved', { name });
+    if (isAxisName(host, name)) return t('build.name.axisVariable', { name });
     const tools = host.settings.getValue<{ name: string }[] | undefined>('tools') || [];
     const params = host.settings.getValue<{ name: string }[] | undefined>('parameters') || [];
     const others: Array<{ name?: string }> = host.is3D() ? surfaceList(host) : functionList(host);
-    if (others.some((f) => f !== self && f.name === name)) return `${name} is already used`;
-    if (tools.some((t) => t.name === name)) return `${name} is already used by a tool`;
-    if (params.some((p) => p.name === name)) return `${name} is already used by a slider`;
+    if (others.some((f) => f !== self && f.name === name)) return t('build.name.taken', { name });
+    if (tools.some((tool) => tool.name === name)) return t('build.name.takenByTool', { name });
+    if (params.some((p) => p.name === name)) return t('build.name.takenBySlider', { name });
     const derived = DERIVED_RE.exec(name);
-    if (derived && tools.some((t) => t.name === derived[1])) return `${name} is a value computed by ${derived[1]}`;
+    if (derived && tools.some((tool) => tool.name === derived[1])) return t('build.name.computedBy', { name, tool: derived[1] });
     return null;
 }
 
-/** ', 0 <= x <= 4' for a set domain, '' otherwise. */
-function domainSummary(domain: string, variable: string): string {
+/** `formula` with its domain: 'y = x^2, 0 <= x <= 4' for a set domain, the formula alone for none. */
+function withDomain(formula: string, domain: string, variable: string): string {
     const d = domain.trim();
-    if (!d) return '';
+    if (!d) return formula;
     const parts = splitDomain(d);
-    return parts ? `, ${parts[0]} <= ${variable} <= ${parts[1]}` : `, ${variable} in ${d}`;
+    return parts ? `${formula}, ${parts[0]} <= ${variable} <= ${parts[1]}` : t('build.fn.summaryIn', { formula, variable, domain: d });
 }
 
 function kindOf(host: PanelHost, fn: FunctionParameters): FunctionKind {
@@ -182,18 +183,18 @@ export function functionSummary(host: PanelHost, fn: FunctionParameters): string
     const x = fn.expression.trim();
     if (kind === 'parametric') {
         const y = fn.expressionY.trim();
-        if (!x && !y) return 'Empty curve: type x(t) and y(t)';
-        return `x = ${x || '?'}, y = ${y || '?'}${domainSummary(fn.domain, 't')}`;
+        if (!x && !y) return t('build.fn.emptyCurve');
+        return withDomain(`x = ${x || '?'}, y = ${y || '?'}`, fn.domain, 't');
     }
-    if (!x) return 'Empty function: type a formula';
-    if (kind === 'polar') return `r = ${x}${domainSummary(fn.domain, 'θ')}`;
-    return `${v2} = ${x}${domainSummary(fn.domain, v1)}`;
+    if (!x) return t('build.fn.empty');
+    if (kind === 'polar') return withDomain(`r = ${x}`, fn.domain, 'θ');
+    return withDomain(`${v2} = ${x}`, fn.domain, v1);
 }
 
 export function surfaceSummary(surface: Function3DParameters): string {
     const z = surface.expression.trim();
-    if (!z) return 'Empty surface: type a formula';
-    return `z = ${z}${surface.wireframe ? ', wireframe' : ''}`;
+    if (!z) return t('build.surface.empty');
+    return surface.wireframe ? t('build.surface.summaryWireframe', { formula: `z = ${z}` }) : `z = ${z}`;
 }
 
 /** Center of the visible x range, for prefilling the tangent point. */
@@ -286,27 +287,27 @@ class CardFields {
 /** Duplicate / Move up / Move down / [Save as template] / Delete. */
 function fillCardMenu(menu: Menu, actions: CardActions, opts: FunctionCardOptions, saveTemplate: (() => void) | null): void {
     const pos = opts.position ? opts.position() : null;
-    menu.addItem((i) => i.setTitle('Duplicate').setIcon('copy').onClick(() => actions.duplicate()));
+    menu.addItem((i) => i.setTitle(t('common.duplicate')).setIcon('copy').onClick(() => actions.duplicate()));
     menu.addItem((i) =>
         i
-            .setTitle('Move up')
+            .setTitle(t('common.moveUp'))
             .setIcon('arrow-up')
             .setDisabled(!!pos && pos.index <= 0)
             .onClick(() => actions.moveUp()),
     );
     menu.addItem((i) =>
         i
-            .setTitle('Move down')
+            .setTitle(t('common.moveDown'))
             .setIcon('arrow-down')
             .setDisabled(!!pos && pos.index >= pos.count - 1)
             .onClick(() => actions.moveDown()),
     );
     if (saveTemplate) {
         const save = saveTemplate;
-        menu.addItem((i) => i.setTitle('Save as template...').setIcon('bookmark-plus').onClick(() => save()));
+        menu.addItem((i) => i.setTitle(t('build.card.saveAsTemplate')).setIcon('bookmark-plus').onClick(() => save()));
     }
     menu.addSeparator();
-    menu.addItem((i) => i.setTitle('Delete').setIcon('trash-2').setWarning(true).onClick(() => actions.remove()));
+    menu.addItem((i) => i.setTitle(t('common.delete')).setIcon('trash-2').setWarning(true).onClick(() => actions.remove()));
 }
 
 /** Ask for a template name and append it to the saved templates. Notice only when writing fails. */
@@ -316,19 +317,17 @@ async function saveUserTemplate(host: PanelHost, suggestion: string, make: (name
     const is3D = make('').is3D;
     const existing = () => (Array.isArray(plugin.data.userTemplates) ? plugin.data.userTemplates : []);
     const name = await promptText(host.app, {
-        title: 'Save as template',
+        title: t('build.saveTemplate.title'),
         value: suggestion,
-        placeholder: 'Template name',
-        description: is3D
-            ? 'Saved surfaces appear in the Add menu under Surfaces > From a template.'
-            : 'Saved functions appear in the Add menu under Functions > From a template.',
-        validate: (v) => (existing().some((t) => t.is3D === is3D && t.name === v) ? `A saved template is already called ${v}` : null),
+        placeholder: t('build.saveTemplate.placeholder'),
+        description: t(is3D ? 'build.saveTemplate.desc3D' : 'build.saveTemplate.desc'),
+        validate: (v) => (existing().some((template) => template.is3D === is3D && template.name === v) ? t('build.saveTemplate.taken', { name: v }) : null),
     });
     if (!name) return;
     try {
         await plugin.saveUserTemplates([...existing(), make(name)]);
     } catch (e) {
-        new Notice(`Could not save the template: ${e instanceof Error ? e.message : String(e)}`);
+        new Notice(t('build.saveTemplate.failed', { error: e instanceof Error ? e.message : String(e) }));
     }
 }
 
@@ -347,6 +346,11 @@ function exprRow(
 
 function setShown(el: HTMLElement, shown: boolean): void {
     el.toggleClass('tikz-hidden', !shown);
+}
+
+/** A text with a link after it on the same line: a space between them, none after full-width punctuation (。？). */
+function beforeLink(text: string): string {
+    return /[\u3000-\u303f\uff01-\uff60]$/.test(text) ? text : `${text} `;
 }
 
 /** Write a value into an input only when it differs (keeps caret and pending messages). */
@@ -400,7 +404,7 @@ export function createFunctionCard(
     };
 
     const saveTemplate = () =>
-        saveUserTemplate(host, fn.expression.trim().slice(0, 40) || 'My function', (name) => ({
+        saveUserTemplate(host, fn.expression.trim().slice(0, 40) || t('build.saveTemplate.defaultName'), (name) => ({
             name,
             is3D: false,
             expression: fn.expression,
@@ -410,7 +414,7 @@ export function createFunctionCard(
 
     const shell = cardShell(parent, host, {
         name: fn.name || '',
-        kind: 'Function',
+        kind: t('build.fn.kind'),
         summary: functionSummary(host, fn),
         color: fn.color,
         onColorChange: (c) => {
@@ -450,7 +454,7 @@ export function createFunctionCard(
         if (result.ok) return result;
         // A reference cycle reads better from the function's own point of view.
         const info = fn.name ? math.functionInfo(fn.name) : null;
-        if (info && info.error && info.error.startsWith(`${fn.name} refers to itself`)) {
+        if (info && info.error && info.cycle) {
             return { ok: false, message: info.error, pos: result.pos };
         }
         return result;
@@ -471,7 +475,7 @@ export function createFunctionCard(
         },
         onErrorChange: () => fields.syncError(),
     });
-    const main = exprRow(body, '', 'etz-fn-row mod-expr', (c) => exprInput(c, exprOptions('expression', 'Expression')));
+    const main = exprRow(body, '', 'etz-fn-row mod-expr', (c) => exprInput(c, exprOptions('expression', t('build.fn.expression'))));
     fields.add('expression', main.input);
     const yRow = exprRow(body, 'y(t) =', 'etz-fn-row mod-expr', (c) => exprInput(c, exprOptions('expressionY', 'y(t)')));
     fields.add('expressionY', yRow.input);
@@ -480,7 +484,7 @@ export function createFunctionCard(
     const domainRow = exprRow(body, '', 'etz-fn-row', (c) =>
         exprInput(c, {
             value: fn.domain,
-            label: 'Domain',
+            label: t('build.fn.domain'),
             validate: (src) => (src.trim() ? host.math().validate(src, 'domain') : OK),
             onInput: (v) => {
                 fn.domain = v;
@@ -498,7 +502,7 @@ export function createFunctionCard(
 
     // ---- options: header row with pills for the options that are on
     const options: DisclosureHandle = disclosure(body, {
-        label: 'Options',
+        label: t('build.fn.options'),
         open: ui.optionsOpen,
         cls: 'etz-fn-options',
         onToggle: (open) => {
@@ -517,7 +521,7 @@ export function createFunctionCard(
     };
 
     const typeSeg: SegmentedHandle<'graph' | 'parametric'> = segmented(options.body, {
-        label: 'Function type',
+        label: t('build.fn.type'),
         value: fn.parametric ? 'parametric' : 'graph',
         fill: true,
         options: [
@@ -531,11 +535,11 @@ export function createFunctionCard(
         },
     });
 
-    const lineRow = field(options.body, { label: 'Line', layout: 'inline', cls: 'etz-fn-row' });
+    const lineRow = field(options.body, { label: t('build.card.line'), layout: 'inline', cls: 'etz-fn-row' });
     const thickness = thicknessPicker(lineRow.controlEl, {
         value: fn.thickness,
-        onChange: (t) => {
-            fn.thickness = t;
+        onChange: (value) => {
+            fn.thickness = value;
             syncPills();
             host.requestUpdate();
         },
@@ -554,11 +558,11 @@ export function createFunctionCard(
                 host.requestUpdate();
             },
         });
-    const dashedChip = toggle('Dashed', () => fn.dashed, (v) => (fn.dashed = v));
-    const legendChip = toggle('Legend', () => fn.showLegend, (v) => (fn.showLegend = v));
-    const fillChip = toggle('Fill to x-axis', () => fn.fill, (v) => (fn.fill = v));
+    const dashedChip = toggle(t('common.dashed'), () => fn.dashed, (v) => (fn.dashed = v));
+    const legendChip = toggle(t('build.fn.legend'), () => fn.showLegend, (v) => (fn.showLegend = v));
+    const fillChip = toggle(t('build.fn.fillToAxis'), () => fn.fill, (v) => (fn.fill = v));
     const tangentChip = toggle(
-        'Tangent',
+        t('build.fn.tangent'),
         () => fn.tangent,
         (v) => {
             fn.tangent = v;
@@ -570,13 +574,13 @@ export function createFunctionCard(
             tangent.input.validate();
         },
     );
-    const extremaChip = toggle('Extrema', () => fn.extrema, (v) => (fn.extrema = v));
+    const extremaChip = toggle(t('build.fn.extrema'), () => fn.extrema, (v) => (fn.extrema = v));
 
     // Dependent rows, shown only while their chip is on.
-    const legendRow = field(options.body, { label: 'Legend', layout: 'inline', cls: 'etz-fn-row etz-fn-dep' });
+    const legendRow = field(options.body, { label: t('build.fn.legend'), layout: 'inline', cls: 'etz-fn-row etz-fn-dep' });
     const legendInput = textInput(legendRow.controlEl, {
         value: fn.legendLabel ?? '',
-        placeholder: 'Default: the formula',
+        placeholder: t('build.fn.legendPlaceholder'),
         onInput: (v) => {
             fn.legendLabel = v;
             host.requestUpdate();
@@ -584,10 +588,10 @@ export function createFunctionCard(
     });
     legendRow.bind(legendInput.el);
 
-    const fillRow = field(options.body, { label: 'Fill', layout: 'inline', cls: 'etz-fn-row etz-fn-dep' });
+    const fillRow = field(options.body, { label: t('build.card.fill'), layout: 'inline', cls: 'etz-fn-row etz-fn-dep' });
     const fillControls = fillRow.controlEl.createDiv({ cls: 'etz-fn-fill' });
     const pattern = dropdown<FillPattern>(fillControls, {
-        label: 'Fill pattern',
+        label: t('build.card.fillPattern'),
         options: FILL_PATTERN_OPTIONS,
         value: fn.fillPattern,
         onChange: (v) => {
@@ -600,7 +604,7 @@ export function createFunctionCard(
         max: 1,
         step: 0.05,
         value: fn.fillOpacity,
-        label: 'Fill opacity',
+        label: t('build.card.fillOpacity'),
         format: (v) => `${Math.round(v * 100)} %`,
         onInput: (v) => {
             fn.fillOpacity = v;
@@ -609,24 +613,24 @@ export function createFunctionCard(
         },
     });
     const regionLink = fillRow.controlEl.createDiv({ cls: 'etz-fn-link-row' });
-    regionLink.createSpan({ text: 'Shade between two curves instead? ' });
+    regionLink.createSpan({ text: beforeLink(t('build.fn.shadeBetween')) });
     textButton(regionLink, {
-        text: 'Add region',
+        text: t('build.add.region'),
         variant: 'link',
         onClick: () => {
             if (opts.onAddRegion) opts.onAddRegion(fn);
         },
     });
 
-    const tangent = exprRow(options.body, 'At x', 'etz-fn-row etz-fn-dep', (c) =>
+    const tangent = exprRow(options.body, t('build.fn.tangentAt', { variable: 'x' }), 'etz-fn-row etz-fn-dep', (c) =>
         exprInput(c, {
             value: fn.tangentPoint,
-            label: 'Tangent point',
-            placeholder: 'e.g. 1, a, or max',
+            label: t('build.fn.tangentPoint'),
+            placeholder: t('build.fn.tangentPlaceholder'),
             validate: (src) => {
                 // A hidden row never reports: the point only matters while Tangent is on.
                 if (!fn.tangent || !cartesian()) return OK;
-                if (!src.trim()) return { ok: false, message: 'Enter a point: a number, an expression, min or max' };
+                if (!src.trim()) return { ok: false, message: t('build.fn.tangentMissing') };
                 if (TANGENT_KEYWORD_RE.test(src)) return OK;
                 return host.math().validate(src, 'value');
             },
@@ -641,7 +645,7 @@ export function createFunctionCard(
             onErrorChange: () => fields.syncError(),
         }),
     );
-    tangent.row.setHint('A number, an expression, or min / max (min2, max2, ... from the left).');
+    tangent.row.setHint(t('build.fn.tangentHint'));
     fields.add('tangentPoint', tangent.input);
 
     // ---- sync
@@ -651,20 +655,20 @@ export function createFunctionCard(
         pillsEl.empty();
         const isCartesian = cartesian();
         const pills: { text: string; target: () => HTMLElement | null }[] = [];
-        if (fn.dashed) pills.push({ text: 'Dashed', target: () => dashedChip.el });
+        if (fn.dashed) pills.push({ text: t('common.dashed'), target: () => dashedChip.el });
         if (fn.thickness && fn.thickness !== 'thin') {
             pills.push({ text: THICKNESS_OPTIONS[fn.thickness] ?? fn.thickness, target: () => thickness.el.querySelector('[tabindex="0"]') });
         }
-        if (fn.showLegend) pills.push({ text: 'Legend', target: () => legendInput.el });
-        if (isCartesian && fn.fill) pills.push({ text: `Fill ${Math.round(fn.fillOpacity * 100)} %`, target: () => opacity.input });
-        if (isCartesian && fn.tangent) pills.push({ text: `Tangent at ${fn.tangentPoint.trim() || '?'}`, target: () => tangent.input.input });
-        if (isCartesian && fn.extrema) pills.push({ text: 'Extrema', target: () => extremaChip.el });
+        if (fn.showLegend) pills.push({ text: t('build.fn.legend'), target: () => legendInput.el });
+        if (isCartesian && fn.fill) pills.push({ text: t('build.fn.pillFill', { percent: Math.round(fn.fillOpacity * 100) }), target: () => opacity.input });
+        if (isCartesian && fn.tangent) pills.push({ text: t('build.fn.pillTangent', { point: fn.tangentPoint.trim() || '?' }), target: () => tangent.input.input });
+        if (isCartesian && fn.extrema) pills.push({ text: t('build.fn.extrema'), target: () => extremaChip.el });
         setShown(pillsEl, !options.isOpen() && pills.length > 0);
         for (const p of pills) {
             const b = pillsEl.createEl('button', { cls: 'etz-fn-pill', text: p.text, attr: { type: 'button' } });
             b.addEventListener('click', () => openOptions(p.target()));
         }
-        options.setMeta(options.isOpen() || pills.length ? '' : isCartesian ? 'Line, legend, fill, tangent' : 'Line, legend');
+        options.setMeta(options.isOpen() || pills.length ? '' : t(isCartesian ? 'build.fn.optionsMeta' : 'build.fn.optionsMetaShort'));
     }
 
     /** Dependent rows follow their chips; decorations exist for y = f(x) graphs only. */
@@ -689,21 +693,21 @@ export function createFunctionCard(
         if (graphSeg) graphSeg.setText(graphText);
         if (k === 'parametric') {
             main.row.setLabel('x(t) =');
-            main.input.input.placeholder = 'E.g. 3 + 2cos(t)';
-            yRow.input.input.placeholder = 'E.g. 2 + 1.5sin(t)';
-            domainRow.row.setLabel('t range');
-            domainRow.input.input.placeholder = '0:2pi (default)';
+            main.input.input.placeholder = t('build.fn.placeholderX');
+            yRow.input.input.placeholder = t('build.fn.placeholderY');
+            domainRow.row.setLabel(t('build.card.range', { variable: 't' }));
+            domainRow.input.input.placeholder = t('build.fn.defaultRange');
         } else if (k === 'polar') {
             main.row.setLabel('r =');
-            main.input.input.placeholder = 'E.g. 1 + cos(theta)';
-            domainRow.row.setLabel('θ range');
-            domainRow.input.input.placeholder = '0:2pi (default)';
+            main.input.input.placeholder = t('build.fn.placeholderPolar');
+            domainRow.row.setLabel(t('build.card.range', { variable: 'θ' }));
+            domainRow.input.input.placeholder = t('build.fn.defaultRange');
         } else {
             main.row.setLabel(`${v2} =`);
-            tangent.row.setLabel(`At ${v1}`);
-            main.input.input.placeholder = `E.g. ${v1}^2 - 2${v1}`;
-            domainRow.row.setLabel('Domain');
-            domainRow.input.input.placeholder = 'Auto (visible range)';
+            tangent.row.setLabel(t('build.fn.tangentAt', { variable: v1 }));
+            main.input.input.placeholder = t('build.fn.placeholder', { variable: v1 });
+            domainRow.row.setLabel(t('build.fn.domain'));
+            domainRow.input.input.placeholder = t('build.fn.autoDomain');
         }
         setShown(yRow.row.el, k === 'parametric');
     }
@@ -789,7 +793,7 @@ export function createSurfaceCard(
     const displayName = () => surface.name || (opts.fallbackName ? opts.fallbackName() : '');
 
     const saveTemplate = () =>
-        saveUserTemplate(host, surface.expression.trim().slice(0, 40) || 'My surface', (name) => ({
+        saveUserTemplate(host, surface.expression.trim().slice(0, 40) || t('build.saveTemplate.defaultName3D'), (name) => ({
             name,
             is3D: true,
             expression: surface.expression,
@@ -800,7 +804,7 @@ export function createSurfaceCard(
 
     const shell = cardShell(parent, host, {
         name: displayName(),
-        kind: 'Surface',
+        kind: t('build.surface.kind'),
         summary: surfaceSummary(surface),
         color: surface.color,
         onColorChange: (c) => {
@@ -835,8 +839,8 @@ export function createSurfaceCard(
     const main = exprRow(body, 'z =', 'etz-fn-row mod-expr', (c) =>
         exprInput(c, {
             value: surface.expression,
-            label: 'Surface formula',
-            placeholder: 'e.g. x^2 - y^2',
+            label: t('build.surface.formula'),
+            placeholder: t('build.surface.placeholder'),
             validate: (src) => (src.trim() ? host.math().validate(src, 'fn2') : OK),
             onInput: (v) => {
                 surface.expression = v;
@@ -851,12 +855,13 @@ export function createSurfaceCard(
     );
     fields.add('expression', main.input);
 
-    const rangeRow = (key: 'xDomain' | 'yDomain', label: string, axis: string) => {
+    const rangeRow = (key: 'xDomain' | 'yDomain', axis: string) => {
+        const label = t('build.card.range', { variable: axis });
         const r = exprRow(body, label, 'etz-fn-row', (c) =>
             exprInput(c, {
                 value: surface[key],
                 label,
-                placeholder: `auto (${axis} range)`,
+                placeholder: t('build.surface.rangePlaceholder', { axis }),
                 validate: (src) => (src.trim() ? host.math().validate(src, 'domain') : OK),
                 onInput: (v) => {
                     surface[key] = v;
@@ -871,12 +876,12 @@ export function createSurfaceCard(
         fields.add(key, r.input);
         return r;
     };
-    const xRange = rangeRow('xDomain', 'x range', 'x');
-    const yRange = rangeRow('yDomain', 'y range', 'y');
+    const xRange = rangeRow('xDomain', 'x');
+    const yRange = rangeRow('yDomain', 'y');
 
-    const styleRow = field(body, { label: 'Style', layout: 'inline', cls: 'etz-fn-row' });
+    const styleRow = field(body, { label: t('build.card.style'), layout: 'inline', cls: 'etz-fn-row' });
     const wireframe = chip(styleRow.controlEl, {
-        label: 'Wireframe',
+        label: t('build.surface.wireframe'),
         value: surface.wireframe,
         onChange: (v) => {
             surface.wireframe = v;
@@ -886,13 +891,13 @@ export function createSurfaceCard(
     });
     styleRow.bind(wireframe.el);
 
-    const opacityRow = field(body, { label: 'Opacity', layout: 'inline', cls: 'etz-fn-row' });
+    const opacityRow = field(body, { label: t('build.card.opacity'), layout: 'inline', cls: 'etz-fn-row' });
     const opacity = liveSlider(opacityRow.controlEl, {
         min: 0.05,
         max: 1,
         step: 0.05,
         value: surface.opacity,
-        label: 'Opacity',
+        label: t('build.card.opacity'),
         format: (v) => `${Math.round(v * 100)} %`,
         onInput: (v) => {
             surface.opacity = v;
@@ -903,13 +908,13 @@ export function createSurfaceCard(
 
     // The plugin setting sets the slider's top, but never past what the preview can draw.
     const maxSamples = Math.max(40, Math.min(MAX_PREVIEW_SAMPLES_3D, (host.plugin && host.plugin.data.maxSamples3D) || SURFACE_SAMPLES_DEFAULT_MAX));
-    const samplesRow = field(body, { label: 'Samples', layout: 'inline', cls: 'etz-fn-row' });
+    const samplesRow = field(body, { label: t('build.surface.samples'), layout: 'inline', cls: 'etz-fn-row' });
     const samples = liveSlider(samplesRow.controlEl, {
         min: SURFACE_SAMPLES_MIN,
         max: maxSamples,
         step: 1,
         value: Math.min(Math.max(surface.samples, SURFACE_SAMPLES_MIN), maxSamples),
-        label: 'Samples per axis',
+        label: t('build.surface.samplesLabel'),
         format: (v) => String(Math.round(v)),
         onInput: (v) => {
             surface.samples = Math.round(v);
@@ -923,9 +928,8 @@ export function createSurfaceCard(
         const n = Math.round(surface.samples);
         samplesRow.setHint(
             n > MAX_SAMPLES_3D
-                ? `Grid points per axis. The preview uses ${n}; the exported code uses at most ${MAX_SAMPLES_3D}, the most pdflatex has memory for.`
-                : 'Grid points per axis. More is smoother but slower. The TikZ export uses at most ' +
-                      `${MAX_SAMPLES_3D} and shares a budget between surfaces so pdflatex can compile it.`
+                ? t('build.surface.samplesOver', { count: n, max: MAX_SAMPLES_3D })
+                : t('build.surface.samplesHint', { max: MAX_SAMPLES_3D })
         );
     }
     syncSamplesHint();

@@ -44,6 +44,7 @@ import {
 } from './geometry';
 import { findExtrema1D } from './math';
 import { errorText } from './util';
+import { language, t as msg } from './i18n';
 
 export type ArrowHeads = 'forward' | 'backward' | 'both';
 
@@ -972,11 +973,11 @@ function runNodes(
         seen.add(node.id);
         const out = newOutput();
         const field = cycle.field;
-        const msg =
+        const message =
             cycle.path.length === 2 && cycle.path[0] === cycle.path[1]
-                ? `${node.name} uses its own result`
-                : `circular reference: ${cycle.path.join(' -> ')}`;
-        settle(i, fail(out, node.name, field, msg));
+                ? msg('problems.scene.usesOwnResult', { name: node.name })
+                : msg('problems.scene.circularReference', { path: cycle.path.join(' -> ') });
+        settle(i, fail(out, node.name, field, message));
     });
 
     const done = new Array<boolean>(nodes.length).fill(false);
@@ -1001,7 +1002,7 @@ function runNodes(
             try {
                 out = compute(node);
             } catch (e) {
-                out = fail(newOutput(), node.name, undefined, `could not be computed: ${errorText(e)}`);
+                out = fail(newOutput(), node.name, undefined, msg('problems.scene.notComputed', { error: errorText(e) }));
             }
         }
         list.unshift({ key, out });
@@ -1124,13 +1125,20 @@ function tangent(
         const want = kw[1] === 'min' ? 'minimum' : 'maximum';
         const n = kw[2] ? Number(kw[2]) : 1;
         if (!(n >= 1)) {
-            fail(out, name, 'tangentPoint', `Use ${kw[1]}, ${kw[1]}2, ${kw[1]}3, ... (counted from the left)`);
+            fail(out, name, 'tangentPoint', msg('problems.scene.tangentKeyword', { keyword: kw[1] }));
             return;
         }
         const found = getExtrema().filter((e) => e.type === want);
         if (found.length < n) {
-            const what = found.length ? `only ${found.length} local ${want === 'minimum' ? 'minima' : 'maxima'}` : `no local ${want}`;
-            fail(out, name, 'tangentPoint', `${name} has ${what} for the tangent at ${kw[1]}${kw[2]}`);
+            const at = `${kw[1]}${kw[2]}`;
+            const key = found.length
+                ? want === 'minimum'
+                    ? 'problems.scene.tangentFewMinima'
+                    : 'problems.scene.tangentFewMaxima'
+                : want === 'minimum'
+                  ? 'problems.scene.tangentNoMinimum'
+                  : 'problems.scene.tangentNoMaximum';
+            fail(out, name, 'tangentPoint', msg(key, { name, count: found.length, at }));
             return;
         }
         x0 = found[n - 1].x;
@@ -1146,7 +1154,7 @@ function tangent(
     }
     const y0 = fn(x0);
     if (!finite(y0)) {
-        fail(out, name, 'tangentPoint', `${name} is not defined at x = ${fmtNum(x0)}`);
+        fail(out, name, 'tangentPoint', msg('problems.scene.notDefinedAt', { name, x: fmtNum(x0) }));
         return;
     }
     const h = Math.max(hi - lo, Math.abs(x0)) * DERIV_REL;
@@ -1155,7 +1163,7 @@ function tangent(
     let slope = (fp - fm) / (2 * h);
     if (!finite(slope)) slope = finite(fp) ? (fp - y0) / h : (y0 - fm) / h;
     if (!finite(slope)) {
-        fail(out, name, 'tangentPoint', `${name} has no tangent at x = ${fmtNum(x0)}`);
+        fail(out, name, 'tangentPoint', msg('problems.scene.noTangentAt', { name, x: fmtNum(x0) }));
         return;
     }
     // Drawn across the function's domain (the view when the domain follows it).
@@ -1217,7 +1225,7 @@ function conditionErrors(out: Output, t: RegionTool, conds: string[], e: unknown
         const v = math.validate(c, 'condition');
         if (v.ok) return;
         any = true;
-        fail(out, t.name, `condition:${i}`, `condition ${i + 1}: ${v.message}`);
+        fail(out, t.name, `condition:${i}`, msg('problems.issue.at', { where: msg('problems.where.condition', { n: i + 1 }), message: v.message }));
     });
     if (!any) {
         const idx = e && typeof e === 'object' && typeof (e as { index?: unknown }).index === 'number' ? (e as { index: number }).index : undefined;
@@ -1348,7 +1356,7 @@ function computeRegionTool(t: RegionTool, ctx: Ctx): Output {
         });
     });
 
-    if (result.empty) addIssue(out, t.name, undefined, 'no point of the view satisfies all conditions', 'info');
+    if (result.empty) addIssue(out, t.name, undefined, msg('problems.scene.regionEmptyInView'), 'info');
     else if (str(t.label).trim()) {
         const p = labelPoint(result, view);
         // Moved off the axes and other labels per frame (layoutTexts), once the text is known.
@@ -1459,21 +1467,21 @@ function crossable(ref: string, field: 'ref1' | 'ref2', t: PointsTool, ctx: Ctx,
     const info = ctx.math.functionInfo(name);
     if (info) {
         if (info.kind === 'parametric') {
-            fail(out, t.name, field, `${name} is parametric: choose a function y = f(x) or a curve`);
+            fail(out, t.name, field, msg('problems.scene.crossParametric', { name }));
             return null;
         }
         if (info.kind === 'polar') {
-            fail(out, t.name, field, `${name} is a polar function: choose a function y = f(x) or a curve`);
+            fail(out, t.name, field, msg('problems.scene.crossPolar', { name }));
             return null;
         }
         if (info.error || info.domainError) {
             // A fresh function card with no formula yet is not a mistake (like a curve without equation).
             const params = ctx.functions[info.index];
             if (!info.domainError && params && !str(params.expression).trim()) {
-                addIssue(out, t.name, field, `${name} has no formula yet`, 'info');
+                addIssue(out, t.name, field, msg('problems.scene.noFormulaYet', { name }), 'info');
                 return null;
             }
-            fail(out, t.name, field, `${name} has an error: ${info.error || info.domainError}`);
+            fail(out, t.name, field, msg('problems.scene.hasErrorWhy', { name, error: String(info.error || info.domainError) }));
             return null;
         }
         const [lo, hi] = info.domain || [ctx.view.xmin, ctx.view.xmax];
@@ -1481,17 +1489,17 @@ function crossable(ref: string, field: 'ref1' | 'ref2', t: PointsTool, ctx: Ctx,
     }
     const tool = ctx.toolsByName.get(name);
     if (!tool) {
-        fail(out, t.name, field, `${name} does not exist`);
+        fail(out, t.name, field, msg('problems.scene.doesNotExist', { name }));
         return null;
     }
     if (tool.type !== 'curve') {
-        fail(out, t.name, field, `${name} is not a function or curve`);
+        fail(out, t.name, field, msg('problems.scene.notFunctionOrCurve', { name }));
         return null;
     }
     const prod = ctx.outputs.get(name);
     if (!prod || !prod.curve) {
-        if (!prod || prod.failed) fail(out, t.name, field, `${name} has an error`);
-        else addIssue(out, t.name, field, `${name} has no equation yet`, 'info');
+        if (!prod || prod.failed) fail(out, t.name, field, msg('problems.scene.hasError', { name }));
+        else addIssue(out, t.name, field, msg('problems.scene.noEquationYet', { name }), 'info');
         return null;
     }
     return { kind: 'curve', name, data: prod.curve };
@@ -1609,7 +1617,7 @@ function intersections(a: Crossable, b: Crossable, ctx: Ctx): Pt[] {
 
 /** Info text for a region with no point in the view: infeasible only when that is certain. */
 function emptyRegionText(name: string, region: RegionData, view: View): string {
-    return feasibleBeyondView(region.set, view) === false ? `${name} is empty (infeasible)` : `${name} has no points in the view`;
+    return feasibleBeyondView(region.set, view) === false ? msg('problems.scene.infeasible', { name }) : msg('problems.scene.noPointsInView', { name });
 }
 
 /** Bounding box of region rings, padded by a grid cell (marching-squares rings run up to a cell inside the boundary). */
@@ -1636,17 +1644,17 @@ function regionOf(t: PointsTool, ctx: Ctx, out: Output): RegionData | null {
     const name = str(t.regionName).trim();
     const tool = ctx.toolsByName.get(name);
     if (!tool) {
-        fail(out, t.name, 'regionName', `${name} does not exist`);
+        fail(out, t.name, 'regionName', msg('problems.scene.doesNotExist', { name }));
         return null;
     }
     if (tool.type !== 'region') {
-        fail(out, t.name, 'regionName', `${name} is not a region`);
+        fail(out, t.name, 'regionName', msg('problems.scene.notARegion', { name }));
         return null;
     }
     const prod = ctx.outputs.get(name);
     if (!prod || !prod.region) {
-        if (!prod || prod.failed) fail(out, t.name, 'regionName', `${name} has an error`);
-        else addIssue(out, t.name, 'regionName', `${name} has no conditions yet`, 'info');
+        if (!prod || prod.failed) fail(out, t.name, 'regionName', msg('problems.scene.hasError', { name }));
+        else addIssue(out, t.name, 'regionName', msg('problems.scene.noConditionsYet', { name }), 'info');
         return null;
     }
     return prod.region;
@@ -1743,9 +1751,9 @@ function computePointsTool(t: PointsTool, ctx: Ctx): Output {
             const a = crossable(str(t.ref1), 'ref1', t, ctx, out);
             const b = crossable(str(t.ref2), 'ref2', t, ctx, out);
             if (out.failed || !a || !b) break;
-            if (a.name === b.name) return fail(out, name, 'ref2', 'Choose two different items');
+            if (a.name === b.name) return fail(out, name, 'ref2', msg('problems.scene.chooseTwo'));
             pts = intersections(a, b, ctx);
-            if (!pts.length) addIssue(out, name, 'ref2', `${a.name} and ${b.name} do not cross in the view`, 'info');
+            if (!pts.length) addIssue(out, name, 'ref2', msg('problems.scene.noCrossing', { first: a.name, second: b.name }), 'info');
             break;
         }
         case 'region': {
@@ -1779,13 +1787,13 @@ function computePointsTool(t: PointsTool, ctx: Ctx): Output {
                 break;
             }
             if (res.status === 'unbounded') {
-                addIssue(out, name, 'objective', `objective is unbounded on ${regionName}`, 'info');
+                addIssue(out, name, 'objective', msg('problems.scene.unbounded', { region: regionName }), 'info');
                 dim = true;
             } else if (res.status === 'outside') {
                 // Proven finite only on the exact path; otherwise it may also be unbounded.
                 const exact = !!objAffine && region.result.exact;
-                const msg = exact ? `the optimum on ${regionName} lies outside the view` : `the objective still improves beyond the view on ${regionName}`;
-                addIssue(out, name, 'objective', msg, 'info');
+                const message = exact ? msg('problems.scene.optimumOutside', { region: regionName }) : msg('problems.scene.improvesBeyond', { region: regionName });
+                addIssue(out, name, 'objective', message, 'info');
                 dim = true;
             }
             pts = res.points.filter((p) => finite(p.x) && finite(p.y));
@@ -1809,7 +1817,7 @@ function computePointsTool(t: PointsTool, ctx: Ctx): Output {
             if (!objective) {
                 const res = latticePoints(set, view, undefined, { bounds });
                 pts = res.points;
-                if (res.truncated) addIssue(out, name, 'regionName', `showing the first ${pts.length} integer points`, 'info');
+                if (res.truncated) addIssue(out, name, 'regionName', msg('problems.scene.firstIntegerPoints', { count: pts.length }), 'info');
                 break;
             }
             // Integer optimum: the objective is evaluated during the scan, so no point is skipped.
@@ -1826,13 +1834,13 @@ function computePointsTool(t: PointsTool, ctx: Ctx): Output {
             if (pts.length && finite(value)) {
                 best = value;
                 vals = pts.map(() => value);
-            } else if (res.inside) addIssue(out, name, 'objective', 'objective is not defined at any of the points', 'info');
+            } else if (res.inside) addIssue(out, name, 'objective', msg('problems.scene.objectiveUndefined'), 'info');
             if (res.truncated) {
-                addIssue(out, name, 'objective', 'the integer optimum was searched over the first million integer points only', 'info');
+                addIssue(out, name, 'objective', msg('problems.scene.integerSearchTruncated'), 'info');
                 dim = true;
             }
             const count = res.count || 0;
-            if (count > pts.length) addIssue(out, name, 'objective', `showing ${pts.length} of ${count} tied integer optima`, 'info');
+            if (count > pts.length) addIssue(out, name, 'objective', msg('problems.scene.tiedOptima', { shown: pts.length, count }), 'info');
             break;
         }
     }
@@ -1856,7 +1864,7 @@ function computePointsTool(t: PointsTool, ctx: Ctx): Output {
             let top = -Infinity;
             for (const v of all) if (finite(v) && sign * v > top) top = sign * v;
             if (top === -Infinity) {
-                addIssue(out, name, 'objective', 'objective is not defined at any of the points', 'info');
+                addIssue(out, name, 'objective', msg('problems.scene.objectiveUndefined'), 'info');
                 pts = [];
                 items = [];
             } else {
@@ -1945,12 +1953,12 @@ function pathPoints(t: SegmentTool, dim: 2 | 3, ctx: Ctx, out: Output, items?: n
         }
         const tool = ctx.toolsByName.get(entry.name);
         if (!tool || tool.type !== 'points' || (tool.dim === 3 ? 3 : 2) !== dim) {
-            fail(out, t.name, 'path', `'${entry.name}' is not a points tool`);
+            fail(out, t.name, 'path', msg('problems.math.notPointsTool', { name: entry.name }));
             return null;
         }
         const prod = ctx.outputs.get(entry.name);
         if (!prod || !prod.points) {
-            fail(out, t.name, 'path', `${entry.name} has an error`);
+            fail(out, t.name, 'path', msg('problems.scene.hasError', { name: entry.name }));
             return null;
         }
         for (const p of prod.points) {
@@ -1971,7 +1979,7 @@ function computeSegmentTool(t: SegmentTool, ctx: Ctx): Output {
     if (!raw) return out;
     const pts = raw.map((p) => ({ x: p[0], y: p[1] }));
     if (pts.length < 2) {
-        addIssue(out, t.name, 'path', 'a path needs at least two points', 'info');
+        addIssue(out, t.name, 'path', msg('problems.scene.pathTooShort'), 'info');
         return out;
     }
     const color = str(t.color) || 'black';
@@ -2055,7 +2063,7 @@ export function computeScene2D(input: SceneInput2D): Scene2D {
     } catch (e) {
         return {
             items: [],
-            issues: [{ source: 'chart', message: `Could not compute the shapes: ${errorText(e)}`, severity: 'error' }],
+            issues: [{ source: 'chart', message: msg('problems.scene.shapesFailed', { error: errorText(e) }), severity: 'error' }],
             derived: {},
         };
     }
@@ -2093,7 +2101,8 @@ function scene2D(input: SceneInput2D): Scene2D {
     }
 
     forgetOnRemoval(state, new Set([...Array.from(ctx.toolsByName.keys()), ...math.functions().map((f) => f.name)]));
-    const frameKey = `${view.xmin},${view.xmax},${view.ymin},${view.ymax}|${grid.nx}x${grid.ny}|${axisStyle}`;
+    // The language too: a cached output keeps its problem messages.
+    const frameKey = `${view.xmin},${view.xmax},${view.ymin},${view.ymax}|${grid.nx}x${grid.ny}|${axisStyle}|${language()}`;
     const seen = new Set<string>();
     const outs = runNodes(nodes, ctx, state, frameKey, (node) => compute2D(node, ctx), seen);
     prune(state, seen);
@@ -3542,10 +3551,10 @@ export interface SceneInput3D {
 function computePoints3D(t: PointsTool, ctx: Ctx): Output {
     const out = newOutput();
     if (t.source !== 'list') {
-        addIssue(out, t.name, 'points', 'only list points in 3D', 'info');
+        addIssue(out, t.name, 'points', msg('problems.scene.onlyListPoints3D'), 'info');
         return out;
     }
-    if (str(t.objective).trim()) addIssue(out, t.name, 'objective', 'the objective is not used in 3D', 'info');
+    if (str(t.objective).trim()) addIssue(out, t.name, 'objective', msg('problems.scene.objectiveUnused3D'), 'info');
     const list = listPoints(str(t.points), 3, t.name, ctx, out);
     if (!list) return out;
     out.points = list;
@@ -3570,10 +3579,10 @@ function computeSegment3D(t: SegmentTool, ctx: Ctx): Output {
     const pts = pathPoints(t, 3, ctx, out);
     if (!pts) return out;
     if (pts.length < 2) {
-        addIssue(out, t.name, 'path', 'a path needs at least two points', 'info');
+        addIssue(out, t.name, 'path', msg('problems.scene.pathTooShort'), 'info');
         return out;
     }
-    if (t.style === 'brace') addIssue(out, t.name, undefined, 'braces are drawn as plain lines in 3D', 'info');
+    if (t.style === 'brace') addIssue(out, t.name, undefined, msg('problems.scene.braces3D'), 'info');
     const triple = (p: number[]): [number, number, number] => [p[0], p[1], p[2]];
     const legs: Array<[number[], number[]]> = [];
     for (let i = 1; i < pts.length; i++) legs.push([pts[i - 1], pts[i]]);
@@ -3613,7 +3622,7 @@ export function computeScene3D(input: SceneInput3D): Scene3D {
             points: [],
             segments: [],
             planes: [],
-            issues: [{ source: 'chart', message: `Could not compute the shapes: ${errorText(e)}`, severity: 'error' }],
+            issues: [{ source: 'chart', message: msg('problems.scene.shapesFailed', { error: errorText(e) }), severity: 'error' }],
             derived: {},
         };
     }

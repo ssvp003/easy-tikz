@@ -4,6 +4,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [4.7.0] - 2026-10-30
+
+The interface in your language. Menus, settings, messages and the 24 guides in the Help tab follow the language Obsidian is set to, with Japanese as the first one besides English, as asked for in issue #4.
+
+### Added
+
+- **Japanese** (`src/i18n/ja`, `src/guides/ja.ts`): the 1,397 texts of the interface (the editor and its preview, the Build cards and the + Add menus, the Chart, Code, Help and AI tabs, the Sliders dock, settings, notices, dialogs, drag tips, problem messages, chart words and What's new) and the 786 texts of the 24 guides. Every translation keeps the values of its English text, and every guide keeps its code spans (tests).
+- **Setting: Interface language.** Follow Obsidian (default), English or 日本語. A language Easy TikZ does not have yet shows in English; command names change after Obsidian restarts.
+- **A guide for translators** (`src/i18n/README.md`): how texts are keyed (`t(key, values)` with named places and plural forms), what stays English, the Japanese style and a glossary.
+- **What's new** opens once more: "New in 4.6 and 4.7" names the interface in your language first.
+
+### Changed
+
+- **What stays English:** formulas, the chart language (your own words for it are in Settings, Chart words), the exported TikZ, everything the AI server answers to AI apps, and the guide pages on GitHub.
+- **Problem messages** quote names as 「k」 in Japanese; the editor still jumps to the offending name.
+- **Undo notices** take their subject from the change itself, not from the words of its label.
+- **Example titles** come from one place (`src/migrate.ts`) for the editor, the Build tab and the Help tab.
+- `main.js` keeps Japanese text as UTF-8 (`charset: 'utf8'` in esbuild).
+- The smoke test checks the editor, a note's problem line and the settings in Japanese.
+
 ## [4.6.0] - 2026-10-19
 
 Your own chart words. Every piece of the chart language can get your own words, in your language or your own terms, and one word of your own can stand for several options. The built-in words keep working beside yours; the editor and the AI tools write yours. Charts that used a word you change later are offered for rewriting.

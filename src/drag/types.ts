@@ -267,6 +267,8 @@ export interface MakeSliderOffer {
 export interface DragCommit {
     /** Undo bar text, e.g. 'Turned C1 and P1's objective'. */
     label: string;
+    /** Optional addition: what the label names ("C1 and P1's objective"), for the stale-undo texts (never split from the label). */
+    subject?: string;
     fields: FieldPatch[];
     params: ParamPatch[];
     makeSlider: MakeSliderOffer | null;

@@ -1,4 +1,4 @@
-import { App, MarkdownPostProcessorContext, MarkdownRenderChild, MarkdownView, Notice, Platform, Plugin, PluginSettingTab, SettingDefinitionItem, SettingGroupItem, TFile, normalizePath, setIcon } from 'obsidian';
+import { App, MarkdownPostProcessorContext, MarkdownRenderChild, MarkdownView, Notice, Platform, Plugin, PluginSettingTab, SettingDefinitionItem, SettingGroupItem, TFile, getLanguage, normalizePath, setIcon } from 'obsidian';
 import { TikzModal } from './src/modal';
 import { SettingsManager } from './src/settings';
 import { SVGRenderer } from './src/renderer';
@@ -27,6 +27,7 @@ import { LiveHost, editingCharts } from './src/live';
 import { ChartWords, NO_WORDS, clean, guideWithWords, setChartWords } from './src/text/words';
 import { rewordNote } from './src/text/reword';
 import { ChartWordsModal } from './src/ui/wordsModal';
+import { LANGUAGE_NAMES, languageSetting, resolveLanguage, setLanguage, t } from './src/i18n';
 import type { Extension } from '@codemirror/state';
 
 type FenceTag = 'easy-tikz' | 'tikz';
@@ -277,7 +278,12 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
             // A damaged draft is dropped instead of offered for restore.
             draft: isDraft(storedDraft) ? storedDraft : null,
             chartWords: clean(stored?.chartWords ?? NO_WORDS),
+            interfaceLanguage: languageSetting(stored?.interfaceLanguage),
         };
+        // The interface in the reader's language (src/i18n): Obsidian's, unless the setting fixes one. Set before
+        // anything is built, so every text the plugin makes from here on is in it.
+        setLanguage(resolveLanguage(this.data.interfaceLanguage, getLanguage()));
+        this.register(() => setLanguage('en'));
         // Their own words for the chart language (src/text/words.ts): read in every block, written by the editor and the AI tools.
         setChartWords(this.data.chartWords);
         this.register(() => setChartWords(NO_WORDS));
@@ -290,7 +296,7 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
         // Cmd/Ctrl+P) can still launch the editor. Reported in #2.
         this.addCommand({
             id: 'open-editor',
-            name: 'Open editor',
+            name: t('plugin.command.openEditor'),
             callback: () => {
                 new TikzModal(this.app, this).open();
             },
@@ -320,13 +326,13 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
 
         this.addCommand({
             id: 'show-whats-new',
-            name: "Show what's new in version 4",
+            name: t('plugin.command.whatsNew'),
             callback: () => this.showWhatsNew(),
         });
 
         this.addCommand({
             id: 'copy-ai-guide',
-            name: 'Copy the guide for AI chats (ChatGPT, Claude, Gemini)',
+            name: t('plugin.command.copyAiGuide'),
             callback: () => void this.copyAiGuide(),
         });
 
@@ -513,7 +519,7 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
             if (changed) await this.saveSettings();
             const http = await loadHttp();
             if (!http) {
-                this.aiStatus = 'AI apps connect to Obsidian on a computer; phones and tablets have no AI server.';
+                this.aiStatus = t('plugin.ai.noServerHere');
                 return;
             }
             const server = new AiServer(new VaultChartHost(this.app, this.manifest.version, () => this.data.blockFormat), { port: this.data.aiPort, token: this.data.aiToken }, http);
@@ -521,7 +527,7 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
                 await server.start();
             } catch (e) {
                 this.aiStatus = errorText(e);
-                new Notice(`Easy TikZ could not start the AI server: ${this.aiStatus}`);
+                new Notice(t('plugin.ai.couldNotStart', { error: this.aiStatus }));
                 return;
             }
             // Switched off or unloaded while it started: it does not stay up.
@@ -569,9 +575,9 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
     async copyAiGuide(): Promise<void> {
         try {
             await navigator.clipboard.writeText(guideWithWords(AI_GUIDE));
-            new Notice('Easy TikZ: the AI guide is on the clipboard. Paste it into your AI chat, then describe the chart you want.');
+            new Notice(t('plugin.ai.guideCopied'));
         } catch (e) {
-            new Notice(`Could not copy the guide: ${errorText(e)}`);
+            new Notice(t('plugin.ai.guideCopyFailed', { error: errorText(e) }));
         }
     }
 
@@ -609,17 +615,13 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
         // Plain `tikz` blocks that aren't JSON (real LaTeX) shouldn't
         // crash. Show a helpful note instead.
         if (fromTikzTag && !trimmed.startsWith('{')) {
-            showBlockError(
-                el,
-                'This looks like raw TikZ / pgfplots code rather than an Easy TikZ JSON block. ' +
-                    'Install obsidian-tikzjax (or similar) to render it, or recreate the chart via the Easy TikZ modal.'
-            );
+            showBlockError(el, t('plugin.block.rawTikz'));
             return;
         }
         // Untrimmed: problems of a text block name the lines as the note shows them.
         const block = readBlock(fromTikzTag ? trimmed : source);
         if (typeof block === 'string') {
-            showBlockError(el, 'Easy TikZ render error: ' + block);
+            showBlockError(el, t('plugin.block.renderError', { error: block }));
             return;
         }
         const chart = new InlineChart(this, el, ctx.sourcePath, source, block.data, fromTikzTag ? 'tikz' : 'easy-tikz', block.format, block.problems);
@@ -676,12 +678,10 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
         if (!found.length) return;
         const charts = found.reduce((n, f) => n + f.changed, 0);
         const ok = await confirmDialog(this.app, {
-            title: 'Rewrite charts with your new words?',
-            message:
-                `${charts} chart${charts === 1 ? '' : 's'} in ${found.length} note${found.length === 1 ? '' : 's'} ${charts === 1 ? 'uses' : 'use'} words you changed, so ${charts === 1 ? 'it no longer reads' : 'they no longer read'} as before. ` +
-                'Rewrite them in your new words? Each line keeps its place and its comments; a chart is only rewritten when it stays exactly the same chart.',
-            confirmText: `Rewrite ${charts} chart${charts === 1 ? '' : 's'}`,
-            cancelText: 'Not now',
+            title: t('plugin.reword.title'),
+            message: t('plugin.reword.message', { charts, notes: found.length }),
+            confirmText: t('plugin.reword.confirm', { count: charts }),
+            cancelText: t('common.notNow'),
         });
         if (!ok) return;
         let done = 0;
@@ -692,7 +692,7 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
                 return r.text;
             });
         }
-        new Notice(`Rewrote ${done} chart${done === 1 ? '' : 's'} with your new words.`);
+        new Notice(t('plugin.reword.done', { count: done }));
     }
 
     /** The chart under a block being edited: on or off as the setting says (every open editor follows). */
@@ -740,7 +740,7 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
             return;
         }
         if (typeof block === 'string') {
-            el.createDiv({ cls: 'tikz-block-error etz-live-error', text: 'Easy TikZ: ' + block });
+            el.createDiv({ cls: 'tikz-block-error etz-live-error', text: t('plugin.block.error', { error: block }) });
             return;
         }
         const appear = !before && el.hasAttribute('data-etz-blank') && this.data.animateCharts !== false && !reducedMotion();
@@ -785,10 +785,7 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
         patch: Partial<{ displayWidth: number; displayAlign: Align }>
     ): Promise<string | null> {
         const notFound = () => {
-            new Notice(
-                'Easy TikZ could not find this chart in the note (it may be inside a callout, use a ~~~ fence, or have been edited), ' +
-                    'so its width and alignment were not saved.'
-            );
+            new Notice(t('plugin.display.notFound'));
             return null;
         };
         const file = this.app.vault.getAbstractFileByPath(sourcePath);
@@ -812,7 +809,7 @@ export default class EasyTikzPlugin extends Plugin implements PluginHost {
                 return at < 0 ? content : content.slice(0, at) + updated + content.slice(at + original.length);
             });
         } catch (e) {
-            new Notice(`Could not save the chart width or alignment: ${errorText(e)}`);
+            new Notice(t('plugin.display.saveFailed', { error: errorText(e) }));
             return null;
         }
         return found ? body : notFound();
@@ -908,7 +905,7 @@ class InlineChart {
         this.data = data;
         this.fenceTag = fenceTag;
         this.format = format;
-        this.textProblems = problems.map((p) => ({ source: `Line ${p.line}, column ${p.column}`, message: p.message, severity: 'error' }));
+        this.textProblems = problems.map((p) => ({ source: t('plugin.chart.textProblemAt', { line: p.line, column: p.column }), message: p.message, severity: 'error' }));
         this.key = sourceKey(sourcePath, data);
     }
 
@@ -918,7 +915,7 @@ class InlineChart {
             this.manager = SettingsManager.fromJSON(cloneData(this.data));
             this.math = this.manager.createMathContext();
         } catch (e) {
-            showBlockError(this.el, 'Easy TikZ render error: ' + errorText(e));
+            showBlockError(this.el, t('plugin.block.renderError', { error: errorText(e) }));
             return;
         }
         this.saved = normalizeParameters(this.manager.getValue('parameters'));
@@ -938,7 +935,7 @@ class InlineChart {
             this.box.setAttr('role', 'button');
             this.box.setAttr('tabindex', '0');
             // aria-labelledby, not aria-label: Obsidian shows a tooltip for every [aria-label] element.
-            const name = visuallyHidden(this.box, 'Easy TikZ chart. Click to edit.');
+            const name = visuallyHidden(this.box, t('plugin.chart.label'));
             name.id = uniqueId('inline-chart');
             this.box.setAttr('aria-labelledby', name.id);
         }
@@ -949,7 +946,7 @@ class InlineChart {
         } catch (e) {
             // Nothing was drawn, so there is no partial chart to keep.
             this.wrapper.remove();
-            showBlockError(this.el, 'Easy TikZ render error: ' + errorText(e));
+            showBlockError(this.el, t('plugin.block.renderError', { error: errorText(e) }));
             return;
         }
 
@@ -1005,7 +1002,7 @@ class InlineChart {
             if (quality === 'full') issues = mergeViewErrors(issues, () => this.manager.resolveView(math).errors, config.is3D).concat(math.parameterIssues());
         } catch (e) {
             if (!this.chartEl) throw e;
-            issues = [{ source: 'chart', message: `Preview failed: ${errorText(e)}`, severity: 'error' }];
+            issues = [{ source: 'chart', message: t('plugin.chart.previewFailed', { error: errorText(e) }), severity: 'error' }];
         }
         this.popIn?.apply(this.chartEl, this.animated());
         if (quality === 'full') {
@@ -1274,8 +1271,7 @@ class InlineChart {
             return;
         }
         const first = issueText(ordered[0]);
-        const count = errors.length === 1 ? '1 problem' : `${errors.length} problems`;
-        this.issuesEl.setText(errors.length ? `${count}: ${first}` : first);
+        this.issuesEl.setText(errors.length ? t('plugin.chart.problems', { count: errors.length, first }) : first);
         this.issuesEl.setAttr('title', ordered.map((i) => issueText(i)).join('\n'));
     }
 
@@ -1315,7 +1311,7 @@ class InlineChart {
         for (const type of ['pointerdown', 'mousedown', 'click', 'keydown']) {
             strip.addEventListener(type, (e) => e.stopPropagation());
         }
-        const name = visuallyHidden(strip, 'Chart sliders');
+        const name = visuallyHidden(strip, t('plugin.chart.sliders'));
         name.id = uniqueId('inline-sliders');
         strip.setAttr('role', 'group');
         strip.setAttr('aria-labelledby', name.id);
@@ -1343,7 +1339,7 @@ class InlineChart {
             const more = textButton(rows, { text: '', variant: 'link', size: 'sm', cls: 'etz-inline-more' });
             const sync = () => {
                 for (const row of extraRows) row.toggleClass('tikz-hidden', !this.expanded);
-                more.setText(this.expanded ? 'Show less' : `Show ${extraRows.length} more`);
+                more.setText(this.expanded ? t('plugin.chart.showLess') : t('plugin.chart.showMore', { count: extraRows.length }));
                 more.el.setAttr('aria-expanded', String(this.expanded));
             };
             more.el.addEventListener('click', () => {
@@ -1356,7 +1352,7 @@ class InlineChart {
 
         this.resetButton = iconButton(strip, {
             icon: 'rotate-ccw',
-            label: 'Reset sliders to the saved values',
+            label: t('plugin.chart.resetSliders'),
             size: 'sm',
             cls: 'etz-inline-reset',
             onClick: () => this.resetParams(),
@@ -1455,15 +1451,15 @@ class InlineChart {
                 persist({ displayAlign: key });
             });
         };
-        makeAlignBtn('left', 'align-left', 'Align left');
-        makeAlignBtn('center', 'align-center', 'Center');
-        makeAlignBtn('right', 'align-right', 'Align right');
+        makeAlignBtn('left', 'align-left', t('plugin.chart.alignLeft'));
+        makeAlignBtn('center', 'align-center', t('plugin.chart.alignCenter'));
+        makeAlignBtn('right', 'align-right', t('plugin.chart.alignRight'));
 
         const sizeBar = this.stage.createDiv({ cls: 'tikz-rendered-controls tikz-rendered-size' });
         const slider = sizeBar.createEl('input', {
             cls: 'tikz-rendered-slider',
             type: 'range',
-            attr: { min: String(MIN_NOTE_WIDTH), step: '10', 'aria-label': 'Chart width' },
+            attr: { min: String(MIN_NOTE_WIDTH), step: '10', 'aria-label': t('plugin.chart.width') },
         });
         // The note width is only known once the block is in the document,
         // so the range is measured again when the slider is about to be used.
@@ -1501,122 +1497,136 @@ class EasyTikzSettingTab extends PluginSettingTab {
     getSettingDefinitions(): SettingDefinitionItem[] {
         return [
             {
-                name: 'Write new charts as',
-                desc:
-                    'Text (default): one line per object, in words, such as plot f(x) = x^2 in blue. ' +
-                    'JSON: one object with every setting. A chart you edit keeps the format its block has.',
-                control: { type: 'dropdown', key: 'blockFormat', options: { text: 'Text', json: 'JSON' }, defaultValue: 'text' },
+                name: t('plugin.settings.language.name'),
+                desc: t('plugin.settings.language.desc'),
+                aliases: ['language', 'interface language', 'Japanese', '日本語', '言語', 'translation', 'locale'],
+                control: {
+                    type: 'dropdown',
+                    key: 'interfaceLanguage',
+                    options: { auto: t('plugin.settings.language.auto', { language: LANGUAGE_NAMES[resolveLanguage('auto', getLanguage())] }), ...LANGUAGE_NAMES },
+                    defaultValue: 'auto',
+                },
             },
             {
-                name: 'Chart colours',
-                desc:
-                    'From your theme (default): charts use the colours of your Obsidian theme and follow light and dark mode. ' +
-                    'As in the LaTeX export: the fixed colours of the exported figure, so the note and the PDF look the same.',
-                control: { type: 'dropdown', key: 'chartColours', options: { theme: 'From your theme', export: 'As in the LaTeX export' }, defaultValue: 'theme' },
+                name: t('plugin.settings.format.name'),
+                desc: t('plugin.settings.format.desc'),
+                aliases: ['形式', 'フォーマット', 'テキスト', '書き方'],
+                control: { type: 'dropdown', key: 'blockFormat', options: { text: t('plugin.settings.format.text'), json: 'JSON' }, defaultValue: 'text' },
             },
             {
-                name: 'Chart under the block while you edit',
-                desc:
-                    'On by default. In Live Preview, a block you are editing shows its chart right under its lines, and the chart changes as you type. ' +
-                    'Off: the chart shows once the cursor leaves the block.',
+                name: t('plugin.settings.colours.name'),
+                desc: t('plugin.settings.colours.desc'),
+                aliases: ['色', 'カラー', '配色', 'テーマ', 'ダークモード'],
+                control: {
+                    type: 'dropdown',
+                    key: 'chartColours',
+                    options: { theme: t('plugin.settings.colours.theme'), export: t('plugin.settings.colours.export') },
+                    defaultValue: 'theme',
+                },
+            },
+            {
+                name: t('plugin.settings.liveChart.name'),
+                desc: t('plugin.settings.liveChart.desc'),
+                aliases: ['ライブプレビュー', '編集', 'リアルタイム'],
                 control: { type: 'toggle', key: 'liveChart', defaultValue: true },
             },
             {
                 type: 'group',
-                heading: 'Chart words',
+                heading: t('plugin.settings.words.heading'),
                 items: [
                     {
-                        name: 'Your words',
-                        aliases: ['words', 'language', 'vocabulary', 'translate', 'German', 'Deutsch', 'terms', 'syntax'],
+                        name: t('plugin.settings.words.name'),
+                        aliases: ['words', 'language', 'vocabulary', 'translate', 'German', 'Deutsch', 'terms', 'syntax', '言葉', '単語', '用語', '語彙', '翻訳', '記法', 'まとめ言葉'],
                         render: (setting) => {
                             const w = this.plugin.data.chartWords;
                             const pieces = Object.keys(w.words).length;
                             const bundles = w.bundles.length;
                             setting.setDesc(
                                 pieces || bundles
-                                    ? `${pieces} piece${pieces === 1 ? '' : 's'} of the chart language with your words${bundles ? `, and ${bundles} word${bundles === 1 ? '' : 's'} of your own for several options` : ''}. The built-in words keep working.`
-                                    : 'Give the pieces of the chart language your own words, in your language or your own terms (plot can be graph, or zeichne), and bundle options under one word of your own. The built-in words keep working.'
+                                    ? bundles
+                                        ? t('plugin.settings.words.descPiecesBundles', { pieces, bundles })
+                                        : t('plugin.settings.words.descPieces', { pieces })
+                                    : t('plugin.settings.words.descEmpty')
                             );
-                            setting.addButton((b) => b.setButtonText('Edit words').setCta().onClick(() => this.plugin.openChartWords(() => this.update())));
+                            setting.addButton((b) => b.setButtonText(t('plugin.settings.words.edit')).setCta().onClick(() => this.plugin.openChartWords(() => this.update())));
                         },
                     },
                     {
-                        name: 'Write charts with',
-                        desc: 'Your words (default): the editor and the AI tools write charts in your words. The built-in words: they write the built-in ones, and your words are only read.',
-                        control: { type: 'dropdown', key: 'chartWordsWrite', options: { yours: 'Your words', builtin: 'The built-in words' }, defaultValue: 'yours' },
+                        name: t('plugin.settings.wordsWrite.name'),
+                        desc: t('plugin.settings.wordsWrite.desc'),
+                        aliases: ['言葉', '組み込みの言葉'],
+                        control: {
+                            type: 'dropdown',
+                            key: 'chartWordsWrite',
+                            options: { yours: t('plugin.settings.wordsWrite.yours'), builtin: t('plugin.settings.wordsWrite.builtin') },
+                            defaultValue: 'yours',
+                        },
                     },
                 ],
             },
             {
-                name: 'Animate chart changes',
-                desc:
-                    'On by default. When a block in a note changes, numbers glide to their new values and new objects pop in. ' +
-                    'Charts never move when your system asks for reduced motion.',
+                name: t('plugin.settings.animate.name'),
+                desc: t('plugin.settings.animate.desc'),
+                aliases: ['アニメーション', '動き', 'モーション'],
                 control: { type: 'toggle', key: 'animateCharts', defaultValue: true },
             },
             {
-                name: 'Invert vertical drag in 3D',
-                desc:
-                    'Off (default): drag down tilts the scene up (camera elevation rises), drag up tilts the scene down - the trackball convention. ' +
-                    'On: drag down lowers the camera, drag up raises it - direct manipulation.',
+                name: t('plugin.settings.invertDrag.name'),
+                desc: t('plugin.settings.invertDrag.desc'),
+                aliases: ['反転', '回転', 'カメラ', '視点'],
                 control: { type: 'toggle', key: 'invertDrag3D', defaultValue: false },
             },
             {
-                name: 'Max 3D samples per axis',
-                desc:
-                    'Upper bound of the Samples slider on each 3D surface card (default 80, at most 120). ' +
-                    'The exported pgfplots code always uses at most 60 samples per axis, because pdflatex runs out of memory above that. ' +
-                    'Re-open the Easy TikZ modal after changing this.',
+                name: t('plugin.settings.samples3D.name'),
+                desc: t('plugin.settings.samples3D.desc'),
+                aliases: ['サンプル数', '曲面', '解像度', '細かさ'],
                 control: { type: 'slider', key: 'maxSamples3D', min: 40, max: 120, step: 10, defaultValue: 80 },
             },
             {
-                name: '2D pan sensitivity',
-                desc:
-                    'Default 1.0 - direct manipulation: moving the mouse by N pixels pans the chart by exactly N chart pixels. ' +
-                    'Lower values dampen the drag for finer control on dense plots (e.g. 0.5 = half-step pan); higher values overshoot. ' +
-                    'The pan rate also scales with the current axis range, so this multiplier stays consistent as you zoom in or out.',
+                name: t('plugin.settings.pan.name'),
+                desc: t('plugin.settings.pan.desc'),
+                aliases: ['感度', '移動', 'パン', 'ドラッグ', 'スクロール'],
                 control: { type: 'slider', key: 'dragSensitivity2D', min: 0.1, max: 2.0, step: 0.05, defaultValue: 1.0 },
             },
             {
-                name: 'Also render plain `tikz` blocks',
-                desc:
-                    'Off by default. When on, the plugin renders blocks tagged plain ```tikz the same way it renders ```easy-tikz blocks. ' +
-                    'Useful if you want one tag for everything, but conflicts with `obsidian-tikzjax` and other plugins that claim ```tikz. ' +
-                    'Reload Obsidian after changing this for the registration to take effect.',
+                name: t('plugin.settings.tikzBlocks.name'),
+                desc: t('plugin.settings.tikzBlocks.desc'),
+                aliases: ['コードブロック', 'tikzjax', '描画'],
                 control: { type: 'toggle', key: 'renderTikzBlocks', defaultValue: false },
             },
             {
-                name: "Show what's new after updates",
-                desc:
-                    'On by default. After an update that brings something new, a short popup shows what changed, once. ' +
-                    'The command "Show what\'s new in version 4" and the Help tab of the editor open it at any time.',
+                name: t('plugin.settings.whatsNew.name'),
+                desc: t('plugin.settings.whatsNew.desc', { command: t('plugin.command.whatsNew') }),
+                aliases: ['新機能', 'アップデート', '更新', 'ポップアップ'],
                 control: { type: 'toggle', key: 'showWhatsNew', defaultValue: true },
             },
             {
                 type: 'group',
-                heading: 'AI access',
+                heading: t('plugin.settings.ai.heading'),
                 items: [
                     // Phones and tablets have no AI server (no Node): only the guide and the agents' section.
                     ...(Platform.isDesktop
                         ? ([
                     {
-                        name: 'Let AI apps make charts',
-                        desc:
-                            'Off by default. Starts a small server on this computer only (127.0.0.1) that AI apps such as Claude Code, Codex, Cursor or VS Code use to read the chart guide, check charts, see them and add them to your notes. ' +
-                            'Every request needs the token below, web pages cannot use it, and it only adds Easy TikZ charts to notes or replaces them, never in files with instructions for AI agents. A notice shows each change, with Undo for changed notes.',
-                        aliases: ['MCP', 'AI', 'Claude', 'ChatGPT', 'Codex', 'Cursor', 'server', 'port'],
+                        name: t('plugin.settings.ai.server.name'),
+                        desc: t('plugin.settings.ai.server.desc'),
+                        aliases: ['MCP', 'AI', 'Claude', 'ChatGPT', 'Codex', 'Cursor', 'server', 'port', 'AI 連携', 'AI アプリ', 'サーバー', 'ポート', 'トークン'],
                         control: { type: 'toggle', key: 'aiServer', defaultValue: false },
                     },
                     {
-                        name: 'Status',
+                        name: t('plugin.settings.ai.status.name'),
                         visible: () => this.plugin.data.aiServer,
                         render: (setting) => {
                             const running = this.plugin.aiServer;
                             setting.setDesc(
-                                running ? `Running at ${mcpUrl(running.port)} (MCP) and http://127.0.0.1:${running.port}/guide.` : `Not running: ${this.plugin.aiStatus || 'starting...'}`
+                                running
+                                    ? t('plugin.settings.ai.status.running', { mcp: mcpUrl(running.port), guide: `http://127.0.0.1:${running.port}/guide` })
+                                    : this.plugin.aiStatus
+                                      ? t('plugin.settings.ai.status.notRunning', { reason: this.plugin.aiStatus })
+                                      : t('plugin.settings.ai.status.starting')
                             );
                             setting.addButton((b) =>
-                                b.setButtonText('Restart').onClick(async () => {
+                                b.setButtonText(t('plugin.settings.ai.restart')).onClick(async () => {
                                     await this.plugin.startAi();
                                     this.update();
                                 })
@@ -1624,8 +1634,8 @@ class EasyTikzSettingTab extends PluginSettingTab {
                         },
                     },
                     {
-                        name: 'Port',
-                        desc: 'Default 27150. After a change, update the address in your AI apps.',
+                        name: t('plugin.settings.ai.port.name'),
+                        desc: t('plugin.settings.ai.port.desc'),
                         visible: () => this.plugin.data.aiServer,
                         control: {
                             type: 'number',
@@ -1634,18 +1644,22 @@ class EasyTikzSettingTab extends PluginSettingTab {
                             max: 65535,
                             step: 1,
                             defaultValue: 27150,
-                            validate: (v) => (Number.isInteger(v) && v >= 1024 && v <= 65535 ? undefined : 'A whole number from 1024 to 65535.'),
+                            validate: (v) => (Number.isInteger(v) && v >= 1024 && v <= 65535 ? undefined : t('plugin.settings.ai.port.invalid')),
                         },
                     },
                     {
-                        name: 'Token',
+                        name: t('plugin.settings.ai.token.name'),
                         visible: () => this.plugin.data.aiServer,
                         render: (setting) => {
                             const token = this.plugin.data.aiToken;
-                            setting.setDesc(`${token ? `${token.slice(0, 4)}...${token.slice(-4)}` : '(made when the server starts)'}. Every request must carry it. Make a new one if it got out, then update your apps.`);
-                            setting.addButton((b) => b.setButtonText('Copy').onClick(() => void copyText(token, 'Token copied.')));
+                            setting.setDesc(
+                                token
+                                    ? t('plugin.settings.ai.token.desc', { token: `${token.slice(0, 4)}...${token.slice(-4)}` })
+                                    : t('plugin.settings.ai.token.descNone')
+                            );
+                            setting.addButton((b) => b.setButtonText(t('common.copy')).onClick(() => void copyText(token, t('plugin.settings.ai.token.copied'))));
                             setting.addButton((b) =>
-                                b.setButtonText('New token').onClick(async () => {
+                                b.setButtonText(t('plugin.settings.ai.token.new')).onClick(async () => {
                                     await this.plugin.newAiToken();
                                     this.update();
                                 })
@@ -1653,8 +1667,8 @@ class EasyTikzSettingTab extends PluginSettingTab {
                         },
                     },
                     {
-                        name: 'Connect an AI app',
-                        desc: 'Pick your app and copy what it needs, once. The app then reads the guide, checks charts and adds them to your notes by itself.',
+                        name: t('plugin.settings.ai.connect.name'),
+                        desc: t('plugin.settings.ai.connect.desc'),
                         visible: () => this.plugin.data.aiServer,
                         render: (setting) => {
                             let app = AI_APPS[0];
@@ -1673,25 +1687,27 @@ class EasyTikzSettingTab extends PluginSettingTab {
                                     refresh();
                                 });
                             });
-                            setting.addButton((b) => b.setButtonText('Copy').setCta().onClick(() => void copyText(text(), `Copied for ${app.name}.`)));
+                            setting.addButton((b) => b.setButtonText(t('common.copy')).setCta().onClick(() => void copyText(text(), t('plugin.settings.ai.connect.copied', { app: app.name }))));
                             refresh();
                         },
                     },
                           ] as SettingGroupItem[])
                         : []),
                     {
-                        name: 'Tell AI agents in this vault',
-                        desc: 'Adds a short Easy TikZ section to AGENTS.md and CLAUDE.md at the top of the vault (creating them if needed). Agents such as Claude Code, Codex, Cursor or Copilot read these files and then know how to make charts here, with or without the server.',
+                        name: t('plugin.settings.ai.agents.name'),
+                        desc: t('plugin.settings.ai.agents.desc'),
+                        aliases: ['エージェント', 'AI 連携'],
                         action: () => {
                             void this.plugin.writeAgentFiles().then(
-                                (files) => new Notice(`Easy TikZ: added the chart section to ${files.join(' and ')}.`),
-                                (e) => new Notice(`Could not write the agent files: ${errorText(e)}`)
+                                (files) => new Notice(t('plugin.settings.ai.agents.done', { files: andList(files) })),
+                                (e) => new Notice(t('plugin.settings.ai.agents.failed', { error: errorText(e) }))
                             );
                         },
                     },
                     {
-                        name: 'Copy the guide for AI chats',
-                        desc: 'For ChatGPT, Claude, Gemini or any chat that cannot reach this computer: paste the guide into the chat, describe your chart, and paste the block it writes into a note.',
+                        name: t('plugin.settings.ai.guide.name'),
+                        desc: t('plugin.settings.ai.guide.desc'),
+                        aliases: ['ガイド', 'AI チャット', 'AI 連携'],
                         action: () => void this.plugin.copyAiGuide(),
                     },
                 ],
@@ -1733,6 +1749,13 @@ class EasyTikzSettingTab extends PluginSettingTab {
                 this.plugin.data.chartColours = value === 'export' ? 'export' : 'theme';
                 this.plugin.applyChartColours();
                 break;
+            case 'interfaceLanguage':
+                this.plugin.data.interfaceLanguage = languageSetting(value);
+                setLanguage(resolveLanguage(this.plugin.data.interfaceLanguage, getLanguage()));
+                await this.plugin.saveSettings();
+                // The settings at once in the new language; an editor opened from now on is in it too.
+                this.update();
+                return;
             case 'maxSamples3D':
                 this.plugin.data.maxSamples3D = Number(value);
                 break;
@@ -1765,6 +1788,11 @@ async function copyText(text: string, done: string): Promise<void> {
         await navigator.clipboard.writeText(text);
         new Notice(done);
     } catch (e) {
-        new Notice(`Could not copy: ${errorText(e)}`);
+        new Notice(t('plugin.copy.failed', { error: errorText(e) }));
     }
+}
+
+/** File names in a sentence: 'AGENTS.md and CLAUDE.md' (one after another, as join(' and ') would). */
+function andList(names: string[]): string {
+    return names.length ? names.reduce((list, name) => t('plugin.settings.ai.agents.and', { list, name })) : '';
 }

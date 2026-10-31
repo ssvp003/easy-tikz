@@ -7,6 +7,7 @@
 import { MathContext, ValidateResult } from '../mathcontext';
 import { RANGE_DEFAULTS, RangeKey, SettingsManager } from '../settings';
 import { FieldHandle, PanelHost } from './host';
+import { MessageKey, t } from '../i18n';
 import {
     ChipHandle,
     ExprInputHandle,
@@ -55,10 +56,18 @@ function num(v: unknown, fallback: number): number {
     return Number.isFinite(n) ? n : fallback;
 }
 
+/** What a taken name is, as the problem says it ('x1 is already a slider name.'). */
+const TAKEN: Readonly<Record<'slider' | 'function' | 'surface' | 'tool', MessageKey>> = {
+    slider: 'panels.chart.takenSlider',
+    function: 'panels.chart.takenFunction',
+    surface: 'panels.chart.takenSurface',
+    tool: 'panels.chart.takenTool',
+};
+
 /** Names already taken by sliders, functions, surfaces and tools, with what they are. */
-function takenNames(settings: SettingsManager): Map<string, string> {
-    const taken = new Map<string, string>();
-    const add = (list: unknown, what: string) => {
+function takenNames(settings: SettingsManager): Map<string, keyof typeof TAKEN> {
+    const taken = new Map<string, keyof typeof TAKEN>();
+    const add = (list: unknown, what: keyof typeof TAKEN) => {
         if (!Array.isArray(list)) return;
         for (const item of list) {
             const name = item && typeof item === 'object' ? (item as { name?: unknown }).name : undefined;
@@ -76,13 +85,13 @@ function takenNames(settings: SettingsManager): Map<string, string> {
 function variablesProblem(spec: string, settings: SettingsManager): string | null {
     const parts = spec.split(/[,;\s]+/).filter((p) => p.length > 0);
     if (parts.length === 0) return null;
-    if (parts.length !== 2) return 'Give two names, e.g. x1, x2.';
-    if (!parts.every((p) => NAME_RE.test(p))) return 'Names start with a letter and use letters, digits and _.';
-    if (parts[0] === parts[1]) return 'The two names must differ.';
+    if (parts.length !== 2) return t('panels.chart.variablesTwo');
+    if (!parts.every((p) => NAME_RE.test(p))) return t('panels.chart.variablesRule');
+    if (parts[0] === parts[1]) return t('panels.chart.variablesDiffer');
     const taken = takenNames(settings);
     for (const p of parts) {
         const what = taken.get(p);
-        if (what) return `${p} is already a ${what} name.`;
+        if (what) return t(TAKEN[what], { name: p });
     }
     return null;
 }
@@ -157,7 +166,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
     };
 
     const buildRanges = () => {
-        const g = group(el, 'Ranges');
+        const g = group(el, t('panels.chart.ranges'));
         const vars = String(settings.getValue('variables') ?? '')
             .split(/[,;\s]+/)
             .filter((p) => NAME_RE.test(p));
@@ -170,15 +179,15 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
         for (const a of axes) {
             const row = g.body.createDiv({ cls: 'etz-range-row' });
             row.createSpan({ cls: 'etz-range-axis', text: a.axis, attr: { 'aria-hidden': 'true' } });
-            rangeInput(row, a.min, `${a.axis} from`);
-            row.createSpan({ cls: 'etz-range-sep', text: 'to', attr: { 'aria-hidden': 'true' } });
-            rangeInput(row, a.max, `${a.axis} to`);
+            rangeInput(row, a.min, t('panels.chart.from', { axis: a.axis }));
+            row.createSpan({ cls: 'etz-range-sep', text: t('panels.chart.rangeTo'), attr: { 'aria-hidden': 'true' } });
+            rangeInput(row, a.max, t('panels.chart.to', { axis: a.axis }));
         }
         const hint = g.body.createDiv({ cls: 'etz-chart-hint' });
-        hint.setText('Ranges accept expressions such as 2*pi or a slider name. Pan and zoom only move ranges that are plain numbers.');
+        hint.setText(t('panels.chart.rangesHint'));
         const buttons = g.body.createDiv({ cls: 'etz-chart-buttons' });
-        textButton(buttons, { text: 'Auto-fit', icon: 'maximize-2', size: 'sm', onClick: () => opts.fit() });
-        textButton(buttons, { text: 'Reset', icon: 'rotate-ccw', size: 'sm', onClick: () => opts.reset() });
+        textButton(buttons, { text: t('panels.chart.autoFit'), icon: 'maximize-2', size: 'sm', onClick: () => opts.fit() });
+        textButton(buttons, { text: t('common.reset'), icon: 'rotate-ccw', size: 'sm', onClick: () => opts.reset() });
     };
 
     const labelInput = (parent: HTMLElement, label: string, key: () => string, placeholder?: string): TextInputHandle => {
@@ -196,16 +205,16 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
     };
 
     const buildAxes = () => {
-        const g = group(el, 'Axes');
+        const g = group(el, t('panels.chart.axes'));
         if (!host.is3D()) {
-            const styleField = field(g.body, { label: 'Style', layout: 'inline' });
+            const styleField = field(g.body, { label: t('panels.chart.style'), layout: 'inline' });
             axisStyle = segmented(styleField.controlEl, {
-                label: 'Axis style',
+                label: t('panels.chart.axisStyle'),
                 value: str(settings.getValue('axis_style')) || 'box',
                 options: [
-                    { value: 'box', text: 'Box' },
-                    { value: 'middle', text: 'Middle' },
-                    { value: 'axes', text: 'Axes' },
+                    { value: 'box', text: t('panels.chart.styleBox') },
+                    { value: 'middle', text: t('panels.chart.styleMiddle') },
+                    { value: 'axes', text: t('panels.chart.styleAxes') },
                 ],
                 onChange: (value) => {
                     settings.setValue('axis_style', value);
@@ -217,7 +226,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
 
         const chips = g.body.createDiv({ cls: 'etz-chip-row' });
         chip(chips, {
-            label: 'Axis labels',
+            label: t('panels.chart.axisLabels'),
             value: settings.getValue('show_axis_label') !== false,
             onChange: (on) => {
                 settings.setValue('show_axis_label', on);
@@ -226,7 +235,7 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
         });
         if (!host.is3D()) {
             const equal = chip(chips, {
-                label: isPolar() ? 'Equal scale (always on in polar)' : 'Equal scale',
+                label: isPolar() ? t('panels.chart.equalScalePolar') : t('panels.chart.equalScale'),
                 value: isPolar() || settings.getValue('equalScale') === true,
                 onChange: (on) => {
                     settings.setValue('equalScale', on);
@@ -236,14 +245,14 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             equal.setDisabled(isPolar());
         }
 
-        labelInput(g.body, 'x label', xLabelKey, isPolar() ? 'none' : 'x');
-        labelInput(g.body, 'y label', yLabelKey, isPolar() ? 'none' : 'y');
-        if (host.is3D()) labelInput(g.body, 'z label', () => 'axis_label_z', 'z');
-        const title = labelInput(g.body, 'Title', () => 'title', 'No title');
+        labelInput(g.body, t('panels.chart.axisLabel', { axis: 'x' }), xLabelKey, isPolar() ? t('panels.chart.noLabel') : 'x');
+        labelInput(g.body, t('panels.chart.axisLabel', { axis: 'y' }), yLabelKey, isPolar() ? t('panels.chart.noLabel') : 'y');
+        if (host.is3D()) labelInput(g.body, t('panels.chart.axisLabel', { axis: 'z' }), () => 'axis_label_z', 'z');
+        const title = labelInput(g.body, t('panels.chart.title'), () => 'title', t('panels.chart.noTitle'));
         title.el.addClass('etz-title-input');
 
-        const defaultHint = 'Names of the horizontal and vertical axis variables, e.g. x1, x2. x and y keep working.';
-        const varsField = field(g.body, { label: 'Axis variables', layout: 'inline', hint: defaultHint });
+        const defaultHint = t('panels.chart.variablesHint');
+        const varsField = field(g.body, { label: t('panels.chart.variables'), layout: 'inline', hint: defaultHint });
         const vars = textInput(varsField.controlEl, {
             value: str(settings.getValue('variables')) || 'x, y',
             placeholder: 'x, y',
@@ -289,10 +298,10 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
     };
 
     const buildGrid = () => {
-        const g = group(el, 'Grid');
+        const g = group(el, t('panels.chart.grid'));
         const chips = g.body.createDiv({ cls: 'etz-chip-row' });
         gridMajor = chip(chips, {
-            label: 'Major grid',
+            label: t('panels.chart.majorGrid'),
             value: settings.getValue('showLargeGrid') === true,
             onChange: (on) => {
                 settings.setValue('showLargeGrid', on);
@@ -300,37 +309,37 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
             },
         });
         gridMinor = chip(chips, {
-            label: 'Minor grid',
+            label: t('panels.chart.minorGrid'),
             value: settings.getValue('showSmallGrid') === true,
             onChange: (on) => {
                 settings.setValue('showSmallGrid', on);
                 host.requestUpdate();
             },
         });
-        sliderField(g.body, 'Major divisions', 'majorTickNum', { min: 2, max: 20, step: 1, fallback: 8 });
-        sliderField(g.body, 'Minor lines', 'gridSize', { min: 1, max: 10, step: 1, fallback: 5 });
+        sliderField(g.body, t('panels.chart.majorDivisions'), 'majorTickNum', { min: 2, max: 20, step: 1, fallback: 8 });
+        sliderField(g.body, t('panels.chart.minorLines'), 'gridSize', { min: 1, max: 10, step: 1, fallback: 5 });
     };
 
     const buildExportSize = () => {
-        const g = group(el, 'Export size');
+        const g = group(el, t('panels.chart.exportSize'));
         const cm = (v: number) => `${formatDecimals(v, 1)} cm`;
-        sliderField(g.body, 'Width', 'size_x_cm', { min: 2, max: 30, step: 0.5, fallback: 10 }, cm);
-        sliderField(g.body, 'Height', 'size_y_cm', { min: 2, max: 30, step: 0.5, fallback: 8 }, cm);
+        sliderField(g.body, t('panels.chart.width'), 'size_x_cm', { min: 2, max: 30, step: 0.5, fallback: 10 }, cm);
+        sliderField(g.body, t('panels.chart.height'), 'size_y_cm', { min: 2, max: 30, step: 0.5, fallback: 8 }, cm);
     };
 
     const buildNote = () => {
-        const g = group(el, 'In your note');
+        const g = group(el, t('panels.chart.inNote'));
         sliderField(
             g.body,
-            'Preview size',
+            t('panels.chart.previewSize'),
             'previewSize',
             { min: 320, max: 1400, step: 20, fallback: 760 },
             (v) => `${formatDecimals(v, 0)} px`,
-            'Longest side, px'
+            t('panels.chart.previewSizeHint')
         );
         const chips = g.body.createDiv({ cls: 'etz-chip-row' });
         chip(chips, {
-            label: 'Show sliders in note',
+            label: t('panels.chart.showSliders'),
             value: settings.getValue('showSlidersInNote') !== false,
             onChange: (on) => {
                 settings.setValue('showSlidersInNote', on);
@@ -340,21 +349,21 @@ export function createChartPanel(parent: HTMLElement, host: PanelHost, opts: Cha
     };
 
     const buildCamera = () => {
-        const g = group(el, '3D view');
+        const g = group(el, t('panels.chart.view3D'));
         const deg = (v: number) => `${formatDecimals(v, 0)}°`;
-        elevation = sliderField(g.body, 'Elevation', 'rotationX', { min: 0, max: 90, step: 1, fallback: 30 }, deg);
-        azimuth = sliderField(g.body, 'Azimuth', 'rotationZ', { min: 0, max: 360, step: 1, fallback: 45 }, deg);
+        elevation = sliderField(g.body, t('panels.chart.elevation'), 'rotationX', { min: 0, max: 90, step: 1, fallback: 30 }, deg);
+        azimuth = sliderField(g.body, t('panels.chart.azimuth'), 'rotationZ', { min: 0, max: 360, step: 1, fallback: 45 }, deg);
         const aspectField = field(g.body, {
-            label: 'Box',
+            label: t('panels.chart.box'),
             layout: 'inline',
-            hint: 'Cube gives every axis the same length; Proportional follows the data ranges.',
+            hint: t('panels.chart.boxHint'),
         });
         const aspect = segmented(aspectField.controlEl, {
-            label: 'Box aspect',
+            label: t('panels.chart.boxAspect'),
             value: settings.getValue('boxAspect') === 'equal' ? 'equal' : 'true',
             options: [
-                { value: 'equal', text: 'Cube' },
-                { value: 'true', text: 'Proportional' },
+                { value: 'equal', text: t('panels.chart.cube') },
+                { value: 'true', text: t('panels.chart.proportional') },
             ],
             onChange: (value) => {
                 settings.setValue('boxAspect', value);

@@ -20,6 +20,7 @@ import { AI_APPS, mcpUrl, shownSnippet } from '../ai/connect';
 import { blocksOf } from '../ai/charttool';
 import { parseChartText } from '../text/parse';
 import { impliedV4, parseLenientJson } from '../blockjson';
+import { t } from '../i18n';
 
 export interface AiPanelHandle {
     el: HTMLElement;
@@ -27,14 +28,32 @@ export interface AiPanelHandle {
     refresh(): void;
 }
 
-/** An example request to give an AI app, ready to copy. */
-const EXAMPLE_REQUEST =
-    'In this note, add a chart of the feasible region x + y <= 4, x + 3y <= 6, x >= 0, y >= 0, with the line 2x + 3y = c on a slider and the point where 2x + 3y is largest.';
+/** An example request to give an AI app, ready to copy (in the reader's language: the app reads it as they would write it). */
+const exampleRequest = (): string => t('panels.ai.example');
+
+/**
+ * Append `text`, a message whose named places are left unfilled, to `el`:
+ * its words as text, and each {place} made by its function, so a
+ * translation can put a link or code wherever its word order wants it.
+ */
+function appendWithPlaces(el: HTMLElement, text: string, places: Record<string, (into: HTMLElement) => void>): void {
+    text.split(/\{(\w+)\}/).forEach((part, i) => {
+        if (i % 2 === 0) {
+            if (part) el.appendText(part);
+        } else if (places[part]) places[part](el);
+        else el.appendText(`{${part}}`);
+    });
+}
+
+/** Names joined with "and" ('AGENTS.md and CLAUDE.md'). */
+function joinAnd(names: string[]): string {
+    return names.reduce((all, name) => (all ? t('panels.ai.agents.and', { first: all, second: name }) : name), '');
+}
 
 /** The chart of the first easy-tikz block in `text` (or of `text` itself), text or JSON, as a note would read it. */
 export function chartFromText(text: string): Record<string, unknown> | string {
     const trimmed = text.trim();
-    if (!trimmed) return 'The clipboard is empty.';
+    if (!trimmed) return t('panels.ai.clipboardEmpty');
     const blocks = blocksOf(trimmed);
     const body = blocks.length ? blocks[0].text : trimmed;
     if (body.trim().startsWith('{')) {
@@ -42,9 +61,9 @@ export function chartFromText(text: string): Record<string, unknown> | string {
         try {
             data = parseLenientJson(body);
         } catch (e) {
-            return `The chart on the clipboard is not valid JSON: ${e instanceof Error ? e.message : String(e)}`;
+            return t('panels.ai.notJson', { message: e instanceof Error ? e.message : String(e) });
         }
-        if (!data || typeof data !== 'object' || Array.isArray(data)) return 'The chart on the clipboard is not a JSON object.';
+        if (!data || typeof data !== 'object' || Array.isArray(data)) return t('panels.ai.notObject');
         const chart = data as Record<string, unknown>;
         return impliedV4(chart) ? { v: 4, ...chart } : chart;
     }
@@ -55,14 +74,13 @@ export function chartFromText(text: string): Record<string, unknown> | string {
         return Array.isArray(items) && items.length > 0;
     });
     if (!blocks.length && (parsed.problems.length || !objects)) {
-        return 'The clipboard holds no Easy TikZ chart. Copy the whole block the AI wrote, from ```easy-tikz to the closing ```.';
+        return t('panels.ai.noChart');
     }
     if (parsed.problems.length) {
         const p = parsed.problems[0];
-        const count = parsed.problems.length === 1 ? 'a problem' : `${parsed.problems.length} problems`;
-        return `The chart on the clipboard has ${count}. Line ${p.line}, column ${p.column}: ${p.message}`;
+        return t('panels.ai.problems', { count: parsed.problems.length, line: p.line, column: p.column, message: p.message });
     }
-    if (!objects) return 'The chart on the clipboard is empty.';
+    if (!objects) return t('panels.ai.empty');
     return parsed.data;
 }
 
@@ -71,10 +89,10 @@ export function createAiPanel(parent: HTMLElement, host: PanelHost): AiPanelHand
     const plugin: PluginHost | null = host.plugin;
 
     const head = el.createDiv({ cls: 'etz-ai-head' });
-    head.createEl('h2', { cls: 'etz-ai-title', text: 'Make charts with AI' });
+    head.createEl('h2', { cls: 'etz-ai-title', text: t('panels.ai.title') });
     head.createEl('p', {
         cls: 'etz-ai-lead',
-        text: 'Describe a chart to an AI and it builds it here, checked by Easy TikZ the way the editor checks it. Pick how you use AI.',
+        text: t('panels.ai.lead'),
     });
 
     const card = (icon: string, title: string, lead: string) => {
@@ -102,10 +120,10 @@ export function createAiPanel(parent: HTMLElement, host: PanelHost): AiPanelHand
         try {
             await navigator.clipboard.writeText(text);
             const label = button.el.textContent || '';
-            button.setText('Copied');
+            button.setText(t('common.copied'));
             window.setTimeout(() => button.setText(label), 1500);
         } catch {
-            button.setText('Could not copy');
+            button.setText(t('panels.ai.copyFailed'));
         }
     };
 
@@ -114,10 +132,8 @@ export function createAiPanel(parent: HTMLElement, host: PanelHost): AiPanelHand
     const desktop = Platform.isDesktop;
     const apps = card(
         'bot',
-        desktop ? 'AI apps on this computer' : 'AI apps on a computer',
-        desktop
-            ? 'Claude Code, Codex, Cursor, VS Code, Gemini CLI, Claude Desktop, LM Studio. Switch this on and connect your app once; it then reads the chart guide, checks charts, looks at them and adds them to your notes by itself.'
-            : 'Claude Code, Codex, Cursor and other AI apps connect to Obsidian on your computer: switch AI access on there. On this device, use an AI chat below.'
+        desktop ? t('panels.ai.apps.title') : t('panels.ai.apps.titleMobile'),
+        desktop ? t('panels.ai.apps.lead') : t('panels.ai.apps.leadMobile')
     );
     const serverRow = apps.createDiv({ cls: 'etz-ai-row' });
     const statusEl = apps.createDiv({ cls: 'etz-ai-status', attr: { role: 'status' } });
@@ -127,14 +143,14 @@ export function createAiPanel(parent: HTMLElement, host: PanelHost): AiPanelHand
     const toggle =
         desktop && plugin?.setAiServer
         ? chip(serverRow, {
-              label: 'Let AI apps make charts',
+              label: t('panels.ai.apps.toggle'),
               value: plugin.aiInfo?.().enabled ?? false,
               onChange: (on) => {
                   void plugin.setAiServer?.(on).then(render);
               },
           })
         : null;
-    if (!toggle && desktop) serverRow.createDiv({ cls: 'etz-ai-note', text: 'Not available here: open the editor from Obsidian.' });
+    if (!toggle && desktop) serverRow.createDiv({ cls: 'etz-ai-note', text: t('panels.ai.apps.unavailable') });
 
     function render() {
         const info = plugin?.aiInfo?.();
@@ -143,22 +159,20 @@ export function createAiPanel(parent: HTMLElement, host: PanelHost): AiPanelHand
         statusEl.empty();
         statusEl.toggleClass('is-error', info.enabled && !info.running);
         if (!info.enabled) {
-            statusEl.setText('Off. Nothing listens until you switch it on. It answers only on this computer, needs a token, and only adds Easy TikZ charts to notes or replaces them; a notice shows each change.');
+            statusEl.setText(t('panels.ai.apps.off'));
         } else if (info.running) {
-            statusEl.appendText('Running at ');
-            statusEl.createEl('code', { text: mcpUrl(info.port) });
-            statusEl.appendText('.');
+            appendWithPlaces(statusEl, t('panels.ai.apps.running'), { url: (into) => into.createEl('code', { text: mcpUrl(info.port) }) });
         } else {
-            statusEl.setText(`Not running: ${info.message || 'starting...'}`);
+            statusEl.setText(t('panels.ai.apps.notRunning', { message: info.message || t('panels.ai.apps.starting') }));
         }
         connect.empty();
         connect.toggleClass('tikz-hidden', !info.enabled);
         if (!info.enabled) return;
 
         const pick = connect.createDiv({ cls: 'etz-ai-row' });
-        pick.createSpan({ cls: 'etz-ai-label', text: 'Your app' });
+        pick.createSpan({ cls: 'etz-ai-label', text: t('panels.ai.apps.yourApp') });
         dropdown(pick, {
-            label: 'Your AI app',
+            label: t('panels.ai.apps.yourAiApp'),
             options: AI_APPS.map((a, i) => ({ value: String(i), text: a.name })),
             value: String(appIndex),
             onChange: (v) => {
@@ -170,9 +184,9 @@ export function createAiPanel(parent: HTMLElement, host: PanelHost): AiPanelHand
         const snippet = connect.createEl('pre', { cls: 'etz-ai-snippet' });
         const actions = connect.createDiv({ cls: 'etz-ai-row' });
         const text = () => AI_APPS[appIndex].snippet(mcpUrl(info.port), info.token);
-        const copyBtn = textButton(actions, { text: 'Copy', icon: 'copy', variant: 'cta', size: 'sm', onClick: () => void copy(text(), copyBtn) });
-        const tokenBtn = textButton(actions, { text: 'New token', icon: 'refresh-cw', size: 'sm', onClick: () => void plugin?.newAiToken?.().then(render) });
-        tokenBtn.el.setAttr('aria-label', 'Make a new token if this one got out, then update your apps');
+        const copyBtn = textButton(actions, { text: t('common.copy'), icon: 'copy', variant: 'cta', size: 'sm', onClick: () => void copy(text(), copyBtn) });
+        const tokenBtn = textButton(actions, { text: t('panels.ai.apps.newToken'), icon: 'refresh-cw', size: 'sm', onClick: () => void plugin?.newAiToken?.().then(render) });
+        tokenBtn.el.setAttr('aria-label', t('panels.ai.apps.newTokenHint'));
         const show = () => {
             where.setText(AI_APPS[appIndex].where);
             // The token is masked on screen; Copy copies the real one.
@@ -181,32 +195,29 @@ export function createAiPanel(parent: HTMLElement, host: PanelHost): AiPanelHand
         show();
 
         const ask = connect.createDiv({ cls: 'etz-ai-ask' });
-        ask.createDiv({ cls: 'etz-ai-label', text: 'Then ask your app, for example:' });
-        ask.createEl('blockquote', { cls: 'etz-ai-example', text: EXAMPLE_REQUEST });
-        const askBtn = textButton(ask, { text: 'Copy the example', icon: 'copy', size: 'sm', variant: 'link', onClick: () => void copy(EXAMPLE_REQUEST, askBtn) });
+        ask.createDiv({ cls: 'etz-ai-label', text: t('panels.ai.apps.ask') });
+        const example = exampleRequest();
+        ask.createEl('blockquote', { cls: 'etz-ai-example', text: example });
+        const askBtn = textButton(ask, { text: t('panels.ai.apps.copyExample'), icon: 'copy', size: 'sm', variant: 'link', onClick: () => void copy(example, askBtn) });
     }
 
     // ------------------------------------------------ 2. AI chats
-    const chats = card(
-        'message-square',
-        'AI chats: ChatGPT, Claude, Gemini',
-        'Chats on the web cannot reach this computer, so they get the guide from you once per chat.'
-    );
+    const chats = card('message-square', t('panels.ai.chats.title'), t('panels.ai.chats.lead'));
     const steps = chats.createEl('ol', { cls: 'etz-ai-steps' });
     const step1 = steps.createEl('li');
-    step1.appendText('Copy the guide and paste it into the chat. ');
+    step1.appendText(t('panels.ai.chats.step1') + ' ');
     const guideBtn = textButton(step1, {
-        text: 'Copy the guide',
+        text: t('panels.ai.chats.copyGuide'),
         icon: 'copy',
         size: 'sm',
         onClick: () => {
             if (plugin?.aiGuideText) void copy(plugin.aiGuideText(), guideBtn);
         },
     });
-    steps.createEl('li', { text: 'Describe the chart you want.' });
+    steps.createEl('li', { text: t('panels.ai.chats.step2') });
     const step3 = steps.createEl('li');
-    step3.appendText('Copy the block the AI writes, then paste it here: it opens in the editor, checked. ');
-    textButton(step3, { text: 'Paste the chart', icon: 'clipboard-paste', size: 'sm', variant: 'cta', onClick: () => void pasteChart() });
+    step3.appendText(t('panels.ai.chats.step3') + ' ');
+    textButton(step3, { text: t('panels.ai.chats.paste'), icon: 'clipboard-paste', size: 'sm', variant: 'cta', onClick: () => void pasteChart() });
     const pasteNote = note(chats);
 
     async function pasteChart() {
@@ -214,7 +225,7 @@ export function createAiPanel(parent: HTMLElement, host: PanelHost): AiPanelHand
         try {
             text = await navigator.clipboard.readText();
         } catch {
-            pasteNote('The clipboard could not be read. Paste the block into a note instead: it renders there, and clicking it opens the editor.', true);
+            pasteNote(t('panels.ai.chats.unreadable'), true);
             return;
         }
         const chart = chartFromText(text);
@@ -228,30 +239,26 @@ export function createAiPanel(parent: HTMLElement, host: PanelHost): AiPanelHand
     }
 
     // ------------------------------------------------ 3. Agents in this vault
-    const agents = card(
-        'folder-open',
-        'AI agents in this vault',
-        'Agents that work in your vault folder (Claude Code, Codex, Cursor, Copilot) read AGENTS.md and CLAUDE.md on their own. A short Easy TikZ section there tells them how to make charts here.'
-    );
+    const agents = card('folder-open', t('panels.ai.agents.title'), t('panels.ai.agents.lead'));
     const agentRow = agents.createDiv({ cls: 'etz-ai-row' });
     const agentNote = note(agents);
     textButton(agentRow, {
-        text: 'Add the section',
+        text: t('panels.ai.agents.add'),
         icon: 'file-plus',
         size: 'sm',
         onClick: () => {
             if (!plugin?.writeAgentFiles) return;
             plugin.writeAgentFiles().then(
-                (files) => agentNote(`Added to ${files.join(' and ')} at the top of the vault.`),
-                (e) => agentNote(`Could not write the files: ${e instanceof Error ? e.message : String(e)}`, true)
+                (files) => agentNote(t('panels.ai.agents.added', { files: joinAnd(files) })),
+                (e) => agentNote(t('panels.ai.agents.failed', { message: e instanceof Error ? e.message : String(e) }), true)
             );
         },
     });
 
     const foot = el.createEl('p', { cls: 'etz-ai-foot' });
-    foot.appendText('The full guide for AIs is also on GitHub: ');
-    foot.createEl('a', { text: 'docs/ai.md', href: 'https://github.com/Saiki77/easy-tikz/blob/main/docs/ai.md' });
-    foot.appendText('.');
+    appendWithPlaces(foot, t('panels.ai.foot'), {
+        link: (into) => into.createEl('a', { text: 'docs/ai.md', href: 'https://github.com/Saiki77/easy-tikz/blob/main/docs/ai.md' }),
+    });
 
     render();
     return { el, refresh: render };

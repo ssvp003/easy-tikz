@@ -24,6 +24,8 @@ import { cloneData } from '../util';
 import { LayerCardActions, LayerCardHandle, createLayerCard } from './layerCards';
 import { CardUiState, FunctionCardHandle, createFunctionCard, createSurfaceCard } from './functionCards';
 import { ExprInputHandle, IconButtonHandle, exprInput, group, iconButton, menuFromButton, openMenu, textButton } from './kit';
+import { t } from '../i18n';
+import type { MessageKey } from '../i18n';
 
 export interface BuildPanelHandle {
     el: HTMLElement;
@@ -93,7 +95,7 @@ const THUMB_PLOT_H = 160;
 const THUMB_PAD_X = 85;
 const THUMB_PAD_Y = 90;
 
-/** Menu headings per recipe section, and the icon every item of that section gets. */
+/** The icon every item of a recipe section gets (sections are identifiers, see SECTION_TITLES). */
 const SECTION_ICONS: Record<string, string> = {
     Functions: 'line-chart',
     Regions: 'paint-bucket',
@@ -105,18 +107,30 @@ const SECTION_ICONS: Record<string, string> = {
     '3D': 'box',
 };
 
-/** One-click links under the starter examples: [text, recipe id]. */
-const EMPTY_LINKS_2D: [string, string][] = [
-    ['Add region', 'feasible-region'],
-    ['Add line', 'line-equation'],
-    ['Add points', 'points-list'],
-    ['Add slider', 'slider'],
+/** Menu heading per recipe section (Functions reads Surfaces in 3D charts). */
+const SECTION_TITLES: Record<string, MessageKey> = {
+    Functions: 'build.section.functions',
+    Regions: 'build.section.regions',
+    'Curves and lines': 'build.section.curves',
+    Points: 'build.section.points',
+    'Segments and arrows': 'build.section.segments',
+    Labels: 'build.section.labels',
+    Sliders: 'build.section.sliders',
+    '3D': 'build.section.shapesInSpace',
+};
+
+/** One-click links under the starter examples: [text key, recipe id]. */
+const EMPTY_LINKS_2D: [MessageKey, string][] = [
+    ['build.add.region', 'feasible-region'],
+    ['build.add.line', 'line-equation'],
+    ['build.add.points', 'points-list'],
+    ['build.add.slider', 'slider'],
 ];
-const EMPTY_LINKS_3D: [string, string][] = [
-    ['Add plane', 'plane'],
-    ['Add point', 'point'],
-    ['Add arrow', 'arrow'],
-    ['Add slider', 'slider'],
+const EMPTY_LINKS_3D: [MessageKey, string][] = [
+    ['build.add.plane', 'plane'],
+    ['build.add.point', 'point'],
+    ['build.add.arrow', 'arrow'],
+    ['build.add.slider', 'slider'],
 ];
 
 type AddScope = 'all' | 'functions' | 'shapes';
@@ -137,8 +151,13 @@ function inDimension(tool: Tool, is3D: boolean): boolean {
 }
 
 function shortText(text: string, max = 24): string {
-    const t = text.trim();
-    return t.length > max ? `${t.slice(0, max - 1)}...` : t;
+    const s = text.trim();
+    return s.length > max ? `${s.slice(0, max - 1)}...` : s;
+}
+
+/** A text with a link after it on the same line: a space between them, none after full-width punctuation (。？). */
+function beforeLink(text: string): string {
+    return /[\u3000-\u303f\uff01-\uff60]$/.test(text) ? text : `${text} `;
 }
 
 /** Plot-area crop of a 2D example: curves and fills only (CSS hides the text). */
@@ -225,7 +244,7 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
 
     // ---- toolbar
     const toolbar = el.createDiv({ cls: 'etz-build-toolbar' });
-    const addButton = textButton(toolbar, { text: 'Add', icon: 'plus', cls: 'etz-build-add' });
+    const addButton = textButton(toolbar, { text: t('common.add'), icon: 'plus', cls: 'etz-build-add' });
     menuFromButton(addButton.el, (menu) => fillAddMenu(menu, 'all', addButton.el));
 
     // ---- empty state
@@ -237,18 +256,18 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
 
     // ---- list with two sections
     const listEl = el.createDiv({ cls: 'etz-build-list' });
-    const fnGroup = group(listEl, 'Functions', 'etz-build-section');
+    const fnGroup = group(listEl, t('build.section.functions'), 'etz-build-section');
     const fnTitle = fnGroup.headerEl.querySelector<HTMLElement>('.etz-group-title');
-    const fnAdd: IconButtonHandle = iconButton(fnGroup.headerEl, { icon: 'plus', label: 'Add function', size: 'sm' });
+    const fnAdd: IconButtonHandle = iconButton(fnGroup.headerEl, { icon: 'plus', label: t('build.add.function'), size: 'sm' });
     menuFromButton(fnAdd.el, (menu) => fillAddMenu(menu, 'functions', fnAdd.el), 'end');
     const fnEmpty = fnGroup.body.createDiv({ cls: 'etz-build-section-empty' });
     const fnList = fnGroup.body.createDiv({ cls: 'etz-build-cards' });
 
-    const layerGroup = group(listEl, 'Shapes and marks', 'etz-build-section');
-    const layerAdd = iconButton(layerGroup.headerEl, { icon: 'plus', label: 'Add shape, point or label', size: 'sm' });
+    const layerGroup = group(listEl, t('build.section.shapes'), 'etz-build-section');
+    const layerAdd = iconButton(layerGroup.headerEl, { icon: 'plus', label: t('build.add.shape'), size: 'sm' });
     menuFromButton(layerAdd.el, (menu) => fillAddMenu(menu, 'shapes', layerAdd.el), 'end');
     const layerEmpty = layerGroup.body.createDiv({ cls: 'etz-build-section-empty' });
-    const layerHint = layerGroup.body.createDiv({ cls: 'etz-build-hint', text: 'Fills always sit below lines and points.' });
+    const layerHint = layerGroup.body.createDiv({ cls: 'etz-build-hint', text: t('build.panel.fillsBelow') });
     const layerList = layerGroup.body.createDiv({ cls: 'etz-build-cards' });
 
     // ---- cards, keyed by the item objects inside settings
@@ -400,9 +419,9 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
         }
         hideEmptyState();
 
-        if (fnTitle) fnTitle.setText(is3D ? 'Surfaces' : 'Functions');
-        fnAdd.setLabel(is3D ? 'Add surface' : 'Add function');
-        layerAdd.setLabel(is3D ? 'Add plane, point or label' : 'Add shape, point or label');
+        if (fnTitle) fnTitle.setText(t(is3D ? 'build.section.surfaces' : 'build.section.functions'));
+        fnAdd.setLabel(t(is3D ? 'build.add.surface' : 'build.add.function'));
+        layerAdd.setLabel(t(is3D ? 'build.add.shape3D' : 'build.add.shape'));
 
         const fns = fnItems();
         const shownTools = visibleTools();
@@ -455,12 +474,12 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
         fnEmpty.empty();
         setShown(fnEmpty, fns.length === 0);
         if (fns.length === 0) {
-            fnEmpty.createSpan({ text: is3D ? 'No surfaces yet. ' : 'No functions yet. ' });
+            fnEmpty.createSpan({ text: beforeLink(t(is3D ? 'build.panel.noSurfaces' : 'build.panel.noFunctions')) });
             const recipe = recipeById(is3D ? 'surface' : 'function');
-            if (recipe) textButton(fnEmpty, { text: is3D ? 'Add a surface' : 'Add a function', variant: 'link', onClick: () => applyRecipe(recipe) });
+            if (recipe) textButton(fnEmpty, { text: t(is3D ? 'build.add.aSurface' : 'build.add.aFunction'), variant: 'link', onClick: () => applyRecipe(recipe) });
         }
         setShown(layerEmpty, layerEls.length === 0);
-        layerEmpty.setText(is3D ? 'Planes, points, arrows and labels appear here.' : 'Regions, lines, points, arrows and labels appear here.');
+        layerEmpty.setText(t(is3D ? 'build.panel.layersEmpty3D' : 'build.panel.layersEmpty'));
         setShown(layerHint, !is3D && shownTools.some((t) => t.type === 'region') && layerEls.length > 1);
 
         // Moving a card re-inserts its element, which drops focus inside it.
@@ -552,16 +571,16 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
         hideEmptyState();
         emptyMode = mode;
 
-        emptyEl.createDiv({ cls: 'etz-build-empty-title', text: 'Start a chart', attr: { role: 'heading', 'aria-level': '2' } });
+        emptyEl.createDiv({ cls: 'etz-build-empty-title', text: t('build.empty.title'), attr: { role: 'heading', 'aria-level': '2' } });
         const placeholder = is3D
-            ? 'Type a surface, e.g. x^2 - y^2'
+            ? t('build.empty.placeholder3D')
             : mode === 'polar'
-              ? 'Type r(θ), e.g. 1 + cos(theta)'
+              ? t('build.empty.placeholderPolar')
               : // An example that sits inside the default view (the Help's Quick start uses the same one).
-                'Type a function, e.g. 2 + sin(x)';
+                t('build.empty.placeholder');
         const start = exprInput(emptyEl, {
             value: '',
-            label: is3D ? 'New surface formula' : 'New function formula',
+            label: t(is3D ? 'build.empty.label3D' : 'build.empty.label'),
             placeholder,
             cls: 'etz-build-start',
             validate: (src): ValidateResult => {
@@ -581,9 +600,9 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
             },
         });
         startInput = start;
-        emptyEl.createDiv({ cls: 'etz-build-hint', text: 'Press Enter to add it. Unknown names can become sliders.' });
+        emptyEl.createDiv({ cls: 'etz-build-hint', text: t('build.empty.hint') });
 
-        emptyEl.createDiv({ cls: 'etz-build-empty-sub', text: 'Or open an example' });
+        emptyEl.createDiv({ cls: 'etz-build-empty-sub', text: t('build.empty.examples') });
         const grid = emptyEl.createDiv({ cls: 'etz-build-examples' });
         // Examples of the current mode first; the others switch the chart to their mode.
         const examples = [...EXAMPLES.filter((e) => e.is3D === is3D), ...EXAMPLES.filter((e) => e.is3D !== is3D)];
@@ -602,7 +621,7 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
         (is3D ? EMPTY_LINKS_3D : EMPTY_LINKS_2D).forEach(([text, id], i) => {
             if (i > 0) links.createSpan({ cls: 'etz-build-dot', text: '·', attr: { 'aria-hidden': 'true' } });
             textButton(links, {
-                text,
+                text: t(text),
                 variant: 'link',
                 onClick: () => {
                     const recipe = recipeById(id);
@@ -747,6 +766,7 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
                 const label: Annotation = {
                     x: fmtNum(c.x),
                     y: fmtNum(c.y),
+                    // Chart data, written into the note and the TikZ code: stays English like the examples.
                     text: 'Label',
                     color: 'black',
                     size: 'normal',
@@ -770,19 +790,19 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
     }
 
     /** A function from a built-in or saved template. */
-    function applyTemplate(t: { expression: string; domain?: string; xDomain?: string; yDomain?: string; color?: string }): void {
+    function applyTemplate(template: { expression: string; domain?: string; xDomain?: string; yDomain?: string; color?: string }): void {
         const recipe = recipeById(host.is3D() ? 'surface' : 'function');
         if (!recipe) return;
         const result = recipe.build(recipeContext());
         if (result.kind !== 'function') return;
-        result.fn.expression = t.expression;
-        result.fn.domain = t.domain ?? '';
-        if (t.color) result.fn.color = t.color;
+        result.fn.expression = template.expression;
+        result.fn.domain = template.domain ?? '';
+        if (template.color) result.fn.color = template.color;
         if (result.surface) {
-            result.surface.expression = t.expression;
-            result.surface.xDomain = t.xDomain ?? result.surface.xDomain;
-            result.surface.yDomain = t.yDomain ?? result.surface.yDomain;
-            if (t.color) result.surface.color = t.color;
+            result.surface.expression = template.expression;
+            result.surface.xDomain = template.xDomain ?? result.surface.xDomain;
+            result.surface.yDomain = template.yDomain ?? result.surface.yDomain;
+            if (template.color) result.surface.color = template.color;
         }
         addRecipeResult(result.fn, result.surface);
     }
@@ -836,19 +856,19 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
         };
     }
 
-    /** The settings list holding `item`, and the label used in "Deleted ..." messages. */
-    function locate(item: Item): { key: string; list: Item[]; name: string } | null {
+    /** The settings list holding `item`, and the "Deleted ..." message for it. */
+    function locate(item: Item): { key: string; list: Item[]; deleted: string } | null {
         const fns = fnItems() as Item[];
         if (fns.includes(item)) {
-            const name = (item as FunctionParameters).name || fnCards.get(item)?.name() || 'function';
-            return { key: fnKey(), list: fns, name };
+            const name = (item as FunctionParameters).name || fnCards.get(item)?.name();
+            return { key: fnKey(), list: fns, deleted: name ? t('build.panel.deleted', { name }) : t('build.panel.deletedFunction') };
         }
         const ts = tools() as Item[];
-        if (ts.includes(item)) return { key: 'tools', list: ts, name: (item as Tool).name };
+        if (ts.includes(item)) return { key: 'tools', list: ts, deleted: t('build.panel.deleted', { name: (item as Tool).name }) };
         const labels = annotations() as Item[];
         if (labels.includes(item)) {
             const text = shortText((item as Annotation).text);
-            return { key: 'annotations', list: labels, name: text ? `label "${text}"` : 'label' };
+            return { key: 'annotations', list: labels, deleted: text ? t('build.panel.deletedLabel', { text }) : t('build.panel.deletedEmptyLabel') };
         }
         return null;
     }
@@ -868,7 +888,7 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
         where.list.splice(index, 1);
         afterStructural();
         focusHeader(next);
-        host.showUndo(`Deleted ${where.name}`, () => {
+        host.showUndo(where.deleted, () => {
             insert(listOf<Item>(where.key), item, index);
             afterStructural();
             focusHeader(item);
@@ -933,9 +953,9 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
             groups.set(r.section, list);
         }
         const heading = (section: string) => {
-            if (section === 'Functions') return is3D ? 'Surfaces' : 'Functions';
-            if (section === '3D') return 'Shapes in space';
-            return section;
+            if (section === 'Functions' && is3D) return t('build.section.surfaces');
+            const title = SECTION_TITLES[section];
+            return title ? t(title) : section;
         };
         groups.forEach((list, section) => {
             const id = `etz-${section.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
@@ -952,7 +972,7 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
             if (section === 'Functions') {
                 menu.addItem((i) =>
                     i
-                        .setTitle('From a template...')
+                        .setTitle(t('build.menu.fromTemplate'))
                         .setIcon('bookmark')
                         .setSection(id)
                         // Obsidian hides this menu after the click handler: open the next one afterwards.
@@ -964,28 +984,29 @@ export function createBuildPanel(parent: HTMLElement, host: PanelHost, options: 
 
     function fillTemplateMenu(menu: Menu): void {
         const is3D = host.is3D();
-        menu.addItem((i) => i.setTitle('Built-in').setIsLabel(true).setSection('etz-builtin'));
-        for (const t of is3D ? BUILT_IN_3D : BUILT_IN_2D) {
+        menu.addItem((i) => i.setTitle(t('build.menu.builtIn')).setIsLabel(true).setSection('etz-builtin'));
+        for (const template of is3D ? BUILT_IN_3D : BUILT_IN_2D) {
+            const name = template.name;
             menu.addItem((i) =>
                 i
-                    .setTitle(`${t.name}: ${t.expression}`)
+                    .setTitle(t('build.menu.template', { name, expression: template.expression }))
                     .setIcon(is3D ? 'box' : 'line-chart')
                     .setSection('etz-builtin')
-                    .onClick(() => applyTemplate(t)),
+                    .onClick(() => applyTemplate(template)),
             );
         }
         const saved = (host.plugin && Array.isArray(host.plugin.data.userTemplates) ? host.plugin.data.userTemplates : []).filter(
-            (t) => !!t.is3D === is3D,
+            (template) => !!template.is3D === is3D,
         );
         if (!saved.length) return;
-        menu.addItem((i) => i.setTitle('Saved').setIsLabel(true).setSection('etz-saved'));
-        for (const t of saved) {
+        menu.addItem((i) => i.setTitle(t('build.menu.saved')).setIsLabel(true).setSection('etz-saved'));
+        for (const template of saved) {
             menu.addItem((i) =>
                 i
-                    .setTitle(`${t.name}: ${t.expression}`)
+                    .setTitle(t('build.menu.template', { name: template.name, expression: template.expression }))
                     .setIcon('bookmark')
                     .setSection('etz-saved')
-                    .onClick(() => applyTemplate(t)),
+                    .onClick(() => applyTemplate(template)),
             );
         }
     }

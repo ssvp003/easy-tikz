@@ -4,6 +4,7 @@
  * field (or slider) that still holds the value the entry wrote, so an undo
  * never overwrites a later edit. Pure: no DOM, no Obsidian.
  */
+import { labelName } from './describe';
 import type { DragCommit, FieldRef } from './types';
 
 export interface HistoryEntry {
@@ -16,6 +17,13 @@ export interface HistoryEntry {
      * skipped because they were edited since (describe.staleText words it).
      */
     stale?: string[];
+    /**
+     * Optional addition: what the stale texts name when the entry restored
+     * nothing and lists no `stale` names: the dragged part ('R1 (2)'), Make
+     * slider's 'slider b from 6.6'. Data, never split from the (translated)
+     * label.
+     */
+    subject?: string;
 }
 
 export interface PatchIO {
@@ -36,6 +44,7 @@ function sameNumber(a: number, b: number): boolean {
 export function patchEntry(commit: DragCommit, io: PatchIO): HistoryEntry {
     const entry: HistoryEntry = {
         label: commit.label,
+        subject: commit.subject,
         stale: [],
         undo: () => apply(false),
         redo: () => apply(true),
@@ -77,7 +86,7 @@ export function patchEntry(commit: DragCommit, io: PatchIO): HistoryEntry {
 
 function refName(ref: FieldRef): string {
     if (ref.kind === 'function') return ref.name;
-    if (ref.kind === 'label') return `Label ${ref.index + 1}`;
+    if (ref.kind === 'label') return labelName(ref.index);
     return ref.id;
 }
 

@@ -54,6 +54,8 @@ import {
     thicknessPicker,
     uniqueId,
 } from './kit';
+import { t } from '../i18n';
+import type { MessageKey } from '../i18n';
 
 /** A tool object (mutated in place inside settings 'tools') or a label (index into settings 'annotations'). */
 export type LayerItem = { kind: 'tool'; tool: Tool } | { kind: 'label'; index: number };
@@ -145,12 +147,13 @@ const OK: ValidateResult = { ok: true };
 const COORD_LABELS_2D = ['({x:2}, {y:2})', '({x}, {y})'];
 const COORD_LABELS_3D = ['({x:2}, {y:2}, {z:2})', '({x}, {y}, {z})'];
 
-const TOOL_KIND: Record<Tool['type'], string> = {
-    region: 'Region',
-    curve: 'Curve',
-    points: 'Points',
-    segment: 'Segment',
-    plane3D: 'Plane',
+/** The kind of each tool card, read with its name by screen readers. */
+const TOOL_KIND: Record<Tool['type'], MessageKey> = {
+    region: 'build.kind.region',
+    curve: 'build.kind.curve',
+    points: 'build.kind.points',
+    segment: 'build.kind.segment',
+    plane3D: 'build.kind.plane',
 };
 
 // --------------------------------------------------------------- helpers
@@ -173,10 +176,6 @@ function listEntries(src: string): string[] {
         .filter((s) => s.length > 0);
 }
 
-function capitalize(s: string): string {
-    return s ? s.charAt(0).toUpperCase() + s.slice(1) : s;
-}
-
 function isFocused(el: HTMLElement): boolean {
     return el.ownerDocument.activeElement === el;
 }
@@ -185,6 +184,15 @@ function isFocused(el: HTMLElement): boolean {
 /** Small segmented option whose visible text is short ('S') but whose accessible name is full ('Small'). */
 function shortOption<T extends string>(value: T, text: string, ariaLabel: string): SegmentOption<T> {
     return { value, ariaLabel, render: (el) => el.setText(text) };
+}
+
+/** Small / medium / large, for marker and text sizes. */
+function sizeOptions<T extends string>(small: T, normal: T, large: T): SegmentOption<T>[] {
+    return [
+        shortOption(small, t('build.size.smallShort'), t('build.size.small')),
+        shortOption(normal, t('build.size.mediumShort'), t('build.size.medium')),
+        shortOption(large, t('build.size.largeShort'), t('build.size.large')),
+    ];
 }
 
 // ------------------------------------------------------------- base card
@@ -592,17 +600,17 @@ abstract class BaseCard implements LayerCardHandle {
 
     private fillMenu(menu: Menu): void {
         const { index, count } = this.position();
-        menu.addItem((i) => i.setTitle('Duplicate').setIcon('copy').onClick(() => this.actions.duplicate()));
+        menu.addItem((i) => i.setTitle(t('common.duplicate')).setIcon('copy').onClick(() => this.actions.duplicate()));
         menu.addItem((i) =>
             i
-                .setTitle('Move up')
+                .setTitle(t('common.moveUp'))
                 .setIcon('arrow-up')
                 .setDisabled(index <= 0)
                 .onClick(() => this.actions.moveUp())
         );
         menu.addItem((i) =>
             i
-                .setTitle('Move down')
+                .setTitle(t('common.moveDown'))
                 .setIcon('arrow-down')
                 .setDisabled(index < 0 || index >= count - 1)
                 .onClick(() => this.actions.moveDown())
@@ -610,7 +618,7 @@ abstract class BaseCard implements LayerCardHandle {
         menu.addSeparator();
         menu.addItem((i) =>
             i
-                .setTitle('Delete')
+                .setTitle(t('common.delete'))
                 .setIcon('trash-2')
                 .setWarning(true)
                 .onClick(() => this.actions.remove())
@@ -705,8 +713,9 @@ abstract class BaseCard implements LayerCardHandle {
         const notes: Array<{ text: string; error: boolean }> = [];
         for (const issue of issues) {
             if (issue.source !== src) continue;
-            // Messages often repeat the source ('P1: R1 is empty'); the card already names it.
-            const text = issue.message.startsWith(`${src}: `) ? issue.message.slice(src.length + 2) : issue.message;
+            // Messages often repeat the source ('P1: R1 is empty', in Japanese with a full-width colon); the card already names it.
+            const lead = [`${src}: `, `${src}：`].find((p) => issue.message.startsWith(p));
+            const text = lead ? issue.message.slice(lead.length) : issue.message;
             const f = issue.field ? this.fields.get(issue.field) : undefined;
             if (issue.severity === 'error' && issue.field && f && f.setIssue && this.inUse(f.el)) {
                 if (!byField.has(issue.field)) byField.set(issue.field, { message: text });
@@ -763,7 +772,7 @@ abstract class ToolCard<T extends Tool> extends BaseCard {
 
     protected constructor(parent: HTMLElement, item: LayerItem, tool: T, host: PanelHost, actions: LayerCardActions) {
         super(parent, item, host, actions, {
-            kind: TOOL_KIND[tool.type],
+            kind: t(TOOL_KIND[tool.type]),
             name: tool.name,
             color: tool.color,
             visible: !tool.hidden,
@@ -813,18 +822,18 @@ abstract class ToolCard<T extends Tool> extends BaseCard {
     }
 
     protected nameProblem(name: string): string | null {
-        if (!name) return 'Enter a name';
-        if (!NAME_RE.test(name)) return 'Start with a letter; use letters, digits and _';
+        if (!name) return t('common.enterName');
+        if (!NAME_RE.test(name)) return t('build.name.startWithLetterUse');
         const [first, second] = this.host.math().axisAliases;
-        if (RESERVED_NAMES.has(name) || first.includes(name) || second.includes(name)) return `${name} is a reserved name`;
+        if (RESERVED_NAMES.has(name) || first.includes(name) || second.includes(name)) return t('build.name.reserved', { name });
         const { all, tools } = this.otherNames();
-        if (all.has(name)) return `${name} is already used`;
+        if (all.has(name)) return t('build.name.taken', { name });
         // Derived values (P1_x, P1_val, ...) must stay unambiguous in both directions.
         const own = DERIVED_RE.exec(name);
-        if (own && tools.has(own[1])) return `${name} is a value of ${own[1]}`;
+        if (own && tools.has(own[1])) return t('build.name.valueOf', { name, tool: own[1] });
         for (const other of all) {
             const m = DERIVED_RE.exec(other);
-            if (m && m[1] === name) return `${name} would clash with ${other}`;
+            if (m && m[1] === name) return t('build.name.clash', { name, other });
         }
         return null;
     }
@@ -849,10 +858,10 @@ abstract class ToolCard<T extends Tool> extends BaseCard {
 
     /** Shared "Label" template row. */
     protected labelField(placeholder: string, locals?: readonly string[]): BoundExpr {
-        const f = field(this.body, { label: 'Label', layout: 'inline' });
+        const f = field(this.body, { label: t('common.label'), layout: 'inline' });
         const bound = this.exprField(f.controlEl, {
             id: 'label',
-            label: 'Label',
+            label: t('common.label'),
             kind: 'template',
             locals,
             placeholder,
@@ -871,7 +880,7 @@ abstract class ToolCard<T extends Tool> extends BaseCard {
         thickness: SegmentedHandle<string>;
         chips: ChipHandle[];
     } {
-        const f = field(this.body, { label: 'Line', layout: 'inline' });
+        const f = field(this.body, { label: t('build.card.line'), layout: 'inline' });
         const thickness = thicknessPicker(f.controlEl, {
             value: o.thickness(),
             onChange: (v) => {
@@ -923,25 +932,25 @@ class RegionCard extends ToolCard<RegionTool> {
 
     /** conditionLabels always has one entry per condition (hand-edited blocks may not). */
     private normalizeLabels(): void {
-        const t = this.tool;
-        if (!Array.isArray(t.conditions)) t.conditions = [];
-        if (!Array.isArray(t.conditionLabels)) t.conditionLabels = [];
-        while (t.conditionLabels.length < t.conditions.length) t.conditionLabels.push('');
-        if (t.conditionLabels.length > t.conditions.length) t.conditionLabels.length = t.conditions.length;
+        const tool = this.tool;
+        if (!Array.isArray(tool.conditions)) tool.conditions = [];
+        if (!Array.isArray(tool.conditionLabels)) tool.conditionLabels = [];
+        while (tool.conditionLabels.length < tool.conditions.length) tool.conditionLabels.push('');
+        if (tool.conditionLabels.length > tool.conditions.length) tool.conditionLabels.length = tool.conditions.length;
     }
 
     private build(): void {
-        const t = this.tool;
+        const tool = this.tool;
         const body = this.body;
 
         // Conditions: one row each, ANDed.
-        const condField = field(body, { label: 'Where all of these hold', cls: 'etz-layer-conditions' });
+        const condField = field(body, { label: t('build.region.conditions'), cls: 'etz-layer-conditions' });
         this.condList = condField.controlEl.createDiv({ cls: 'etz-layer-cond-list' });
         this.renderConditions();
         const condActions = condField.controlEl.createDiv({ cls: 'etz-layer-cond-actions' });
-        textButton(condActions, { text: 'Add condition', icon: 'plus', variant: 'ghost', size: 'sm', onClick: () => this.addCondition() });
+        textButton(condActions, { text: t('build.add.condition'), icon: 'plus', variant: 'ghost', size: 'sm', onClick: () => this.addCondition() });
         this.numberBtn = textButton(condActions, {
-            text: 'Number them (1), (2), ...',
+            text: t('build.region.number'),
             variant: 'link',
             size: 'sm',
             onClick: () => this.numberConditions(),
@@ -950,29 +959,29 @@ class RegionCard extends ToolCard<RegionTool> {
         // Fill and constraint-line switches, then the fill's pattern and live opacity.
         const chipRow = body.createDiv({ cls: 'etz-layer-row' });
         const fill = chip(chipRow, {
-            label: 'Fill',
-            value: t.fill,
+            label: t('build.card.fill'),
+            value: tool.fill,
             onChange: (v) => {
-                t.fill = v;
+                tool.fill = v;
                 this.changed();
             },
         });
         const lines = chip(chipRow, {
-            label: 'Constraint lines',
-            value: t.constraintLines,
+            label: t('build.region.constraintLines'),
+            value: tool.constraintLines,
             onChange: (v) => {
-                t.constraintLines = v;
+                tool.constraintLines = v;
                 this.changed();
             },
         });
-        const shading = field(body, { label: 'Shading', layout: 'inline' });
+        const shading = field(body, { label: t('build.region.shading'), layout: 'inline' });
         this.fillOpts = shading.el;
         const pattern = dropdown<FillPattern>(shading.controlEl, {
-            label: 'Fill pattern',
+            label: t('build.card.fillPattern'),
             options: FILL_PATTERN_OPTIONS,
-            value: t.fillPattern,
+            value: tool.fillPattern,
             onChange: (v) => {
-                t.fillPattern = v;
+                tool.fillPattern = v;
                 this.changed();
             },
         });
@@ -980,56 +989,56 @@ class RegionCard extends ToolCard<RegionTool> {
             min: 0,
             max: 1,
             step: 0.05,
-            value: t.fillOpacity,
-            label: 'Fill opacity',
+            value: tool.fillOpacity,
+            label: t('build.card.fillOpacity'),
             format: percent,
             onInput: (v) => {
-                t.fillOpacity = v;
+                tool.fillOpacity = v;
                 this.frame();
             },
         });
 
         // Outline: none / solid / dashed + thickness.
-        const outField = field(body, { label: 'Outline', layout: 'inline' });
+        const outField = field(body, { label: t('build.region.outline'), layout: 'inline' });
         const outline = segmented<OutlineStyle>(outField.controlEl, {
-            label: 'Outline',
-            value: t.outline,
+            label: t('build.region.outline'),
+            value: tool.outline,
             options: [
-                { value: 'none', text: 'None' },
-                { value: 'solid', text: 'Solid' },
-                { value: 'dashed', text: 'Dashed' },
+                { value: 'none', text: t('common.none') },
+                { value: 'solid', text: t('common.solid') },
+                { value: 'dashed', text: t('common.dashed') },
             ],
             onChange: (v) => {
-                t.outline = v;
+                tool.outline = v;
                 this.changed();
             },
         });
         outField.bind(outline.el);
         this.outlineThickness = thicknessPicker(outField.controlEl, {
-            value: t.thickness,
-            label: 'Outline thickness',
+            value: tool.thickness,
+            label: t('build.region.outlineThickness'),
             onChange: (v) => {
-                t.thickness = v;
+                tool.thickness = v;
                 this.changed();
             },
         });
 
-        this.labelField('optional, e.g. Feasible set');
+        this.labelField(t('build.region.labelPlaceholder'));
 
         // Shortcuts that create linked points tools.
         const actionsRow = body.createDiv({ cls: 'etz-layer-actions' });
-        textButton(actionsRow, { text: 'Mark corners', icon: 'crosshair', size: 'sm', onClick: () => this.markCorners() });
-        textButton(actionsRow, { text: 'Find optimum', icon: 'target', size: 'sm', onClick: () => this.findOptimum() });
+        textButton(actionsRow, { text: t('build.region.markCorners'), icon: 'crosshair', size: 'sm', onClick: () => this.markCorners() });
+        textButton(actionsRow, { text: t('build.region.findOptimum'), icon: 'target', size: 'sm', onClick: () => this.findOptimum() });
 
         this.onSync(() => {
             this.normalizeLabels();
-            if (this.rows.length !== t.conditions.length) this.renderConditions();
-            fill.setValue(t.fill);
-            pattern.setValue(t.fillPattern);
-            this.opacity.setValue(t.fillOpacity);
-            outline.setValue(t.outline);
-            this.outlineThickness.setValue(t.thickness);
-            lines.setValue(t.constraintLines);
+            if (this.rows.length !== tool.conditions.length) this.renderConditions();
+            fill.setValue(tool.fill);
+            pattern.setValue(tool.fillPattern);
+            this.opacity.setValue(tool.fillOpacity);
+            outline.setValue(tool.outline);
+            this.outlineThickness.setValue(tool.thickness);
+            lines.setValue(tool.constraintLines);
         });
     }
 
@@ -1049,20 +1058,20 @@ class RegionCard extends ToolCard<RegionTool> {
     }
 
     private conditionRow(i: number): ConditionRow {
-        const t = this.tool;
+        const tool = this.tool;
         const el = this.condList.createDiv({ cls: 'etz-layer-cond-row' });
         const cond = this.exprField(el, {
             id: `condition:${i}`,
-            label: `Condition ${i + 1}`,
+            label: t('build.region.condition', { n: i + 1 }),
             kind: 'condition',
-            placeholder: i === 0 ? 'e.g. x + y <= 4' : 'e.g. 0 <= x <= 4',
-            get: () => t.conditions[i] ?? '',
+            placeholder: t(i === 0 ? 'build.region.conditionPlaceholder' : 'build.region.conditionPlaceholderNext'),
+            get: () => tool.conditions[i] ?? '',
             set: (v) => {
-                t.conditions[i] = v;
+                tool.conditions[i] = v;
             },
             onEnter: (v) => {
                 // Enter on the last filled row starts the next one.
-                if (i === t.conditions.length - 1) {
+                if (i === tool.conditions.length - 1) {
                     if (v.trim()) this.addCondition();
                 } else {
                     this.rows[i + 1].cond.h.focus();
@@ -1071,18 +1080,18 @@ class RegionCard extends ToolCard<RegionTool> {
         });
         const label = this.exprField(el, {
             id: `conditionLabel:${i}`,
-            label: `Label of condition ${i + 1}`,
+            label: t('build.region.conditionLabel', { n: i + 1 }),
             kind: 'template',
-            placeholder: 'Label',
+            placeholder: t('common.label'),
             cls: 'etz-layer-cond-label',
-            get: () => t.conditionLabels[i] ?? '',
+            get: () => tool.conditionLabels[i] ?? '',
             set: (v) => {
-                t.conditionLabels[i] = v;
+                tool.conditionLabels[i] = v;
             },
         });
         iconButton(el, {
             icon: 'x',
-            label: `Remove condition ${i + 1}`,
+            label: t('build.region.removeCondition', { n: i + 1 }),
             cls: 'etz-layer-cond-remove',
             onClick: () => this.removeCondition(i),
         });
@@ -1097,26 +1106,26 @@ class RegionCard extends ToolCard<RegionTool> {
     }
 
     private removeCondition(i: number): void {
-        const t = this.tool;
-        if (t.conditions.length <= 1) {
+        const tool = this.tool;
+        if (tool.conditions.length <= 1) {
             // The last row is cleared rather than removed, so there is always somewhere to type.
-            t.conditions[0] = '';
-            t.conditionLabels[0] = '';
+            tool.conditions[0] = '';
+            tool.conditionLabels[0] = '';
             this.refresh();
             this.rows[0]?.cond.h.focus();
         } else {
-            t.conditions.splice(i, 1);
-            t.conditionLabels.splice(i, 1);
-            this.renderConditions(Math.min(i, t.conditions.length - 1));
+            tool.conditions.splice(i, 1);
+            tool.conditionLabels.splice(i, 1);
+            this.renderConditions(Math.min(i, tool.conditions.length - 1));
         }
         this.changed();
     }
 
     private numberConditions(): void {
-        const t = this.tool;
+        const tool = this.tool;
         let k = 0;
-        t.conditions.forEach((c, i) => {
-            t.conditionLabels[i] = c.trim() ? `(${++k})` : '';
+        tool.conditions.forEach((c, i) => {
+            tool.conditionLabels[i] = c.trim() ? `(${++k})` : '';
         });
         this.refresh();
         this.changed();
@@ -1149,20 +1158,26 @@ class RegionCard extends ToolCard<RegionTool> {
     }
 
     protected syncState(): void {
-        const t = this.tool;
+        const tool = this.tool;
         if (!this.fillOpts) return;
-        this.fillOpts.toggleClass('tikz-hidden', !t.fill);
-        this.outlineThickness.el.toggleClass('tikz-hidden', t.outline === 'none');
-        const filled = t.conditions.filter((c) => c.trim()).length;
+        this.fillOpts.toggleClass('tikz-hidden', !tool.fill);
+        this.outlineThickness.el.toggleClass('tikz-hidden', tool.outline === 'none');
+        const filled = tool.conditions.filter((c) => c.trim()).length;
         this.numberBtn.toggleClass('tikz-hidden', filled < 2);
     }
 
     protected summary(): string {
-        const t = this.tool;
-        const conds = t.conditions.map((c) => squash(c)).filter((c) => c.length > 0);
-        if (!conds.length) return 'Region: add a condition';
-        const lead = t.fill ? 'Shaded where' : t.outline !== 'none' ? 'Outline where' : t.constraintLines ? 'Constraint lines of' : 'Region where';
-        return `${lead} ${conds.join(', ')}`;
+        const tool = this.tool;
+        const conds = tool.conditions.map((c) => squash(c)).filter((c) => c.length > 0);
+        if (!conds.length) return t('build.region.empty');
+        const lead: MessageKey = tool.fill
+            ? 'build.region.shaded'
+            : tool.outline !== 'none'
+              ? 'build.region.outlined'
+              : tool.constraintLines
+                ? 'build.region.lines'
+                : 'build.region.where';
+        return t(lead, { conditions: conds.join(', ') });
     }
 }
 
@@ -1176,65 +1191,65 @@ class CurveCard extends ToolCard<CurveTool> {
     }
 
     private build(): void {
-        const t = this.tool;
-        const eqField = field(this.body, { label: 'Equation', layout: 'inline' });
+        const tool = this.tool;
+        const eqField = field(this.body, { label: t('build.curve.equation'), layout: 'inline' });
         const eq = this.exprField(eqField.controlEl, {
             id: 'equation',
-            label: 'Equation',
+            label: t('build.curve.equation'),
             kind: 'equation',
             required: true,
-            placeholder: 'e.g. 2x + 3y = 12',
-            get: () => t.equation,
+            placeholder: t('build.curve.equationPlaceholder'),
+            get: () => tool.equation,
             set: (v) => {
-                t.equation = v;
+                tool.equation = v;
             },
         });
         eqField.bind(eq.h.input);
 
-        const lvField = field(this.body, { label: 'Levels', layout: 'inline' });
+        const lvField = field(this.body, { label: t('build.curve.levels'), layout: 'inline' });
         const levels = this.exprField(lvField.controlEl, {
             id: 'levels',
-            label: 'Levels',
+            label: t('build.curve.levels'),
             kind: 'levels',
-            placeholder: 'optional: 2, 4, 6',
-            get: () => t.levels,
+            placeholder: t('build.curve.levelsPlaceholder'),
+            get: () => tool.levels,
             set: (v) => {
-                t.levels = v;
+                tool.levels = v;
             },
         });
         lvField.bind(levels.h.input);
 
         this.lineRow({
-            thickness: () => t.thickness,
+            thickness: () => tool.thickness,
             setThickness: (v) => {
-                t.thickness = v;
+                tool.thickness = v;
             },
             chips: [
                 {
-                    label: 'Dashed',
-                    get: () => t.dashed,
+                    label: t('common.dashed'),
+                    get: () => tool.dashed,
                     set: (v) => {
-                        t.dashed = v;
+                        tool.dashed = v;
                     },
                 },
             ],
         });
-        this.labelField('optional, e.g. z = {level}', LABEL_LOCALS.curve);
+        this.labelField(t('build.curve.labelPlaceholder'), LABEL_LOCALS.curve);
     }
 
     protected summary(): string {
-        const t = this.tool;
-        const eq = squash(t.equation);
-        if (!eq) return 'Curve: type an equation';
-        const levels = squash(t.levels);
-        if (levels) return `Level curves of ${eq} at ${levels}`;
+        const tool = this.tool;
+        const eq = squash(tool.equation);
+        if (!eq) return t('build.curve.empty');
+        const levels = squash(tool.levels);
+        if (levels) return t('build.curve.levelCurves', { equation: eq, levels });
         let affine = false;
         try {
-            affine = this.host.math().equation(t.equation).affine !== null;
+            affine = this.host.math().equation(tool.equation).affine !== null;
         } catch {
             affine = false;
         }
-        return `${affine ? 'Line' : 'Curve'} ${eq.includes('=') ? eq : `${eq} = 0`}`;
+        return t(affine ? 'build.curve.line' : 'build.curve.curve', { equation: eq.includes('=') ? eq : `${eq} = 0` });
     }
 }
 
@@ -1301,26 +1316,26 @@ class PointsCard extends ToolCard<PointsTool> {
     }
 
     private build(): void {
-        const t = this.tool;
+        const tool = this.tool;
         const body = this.body;
 
         // Source. 3D charts only draw list points, so the other sources are
         // offered there only while one is still selected.
         const sources: Array<SegmentOption<PointsTool['source']>> = [
-            { value: 'list', text: 'List' },
-            { value: 'intersections', text: 'Intersections' },
+            { value: 'list', text: t('build.points.list') },
+            { value: 'intersections', text: t('build.points.intersections') },
             // 'Region': corners without an objective, the best point anywhere in it with one.
-            { value: 'region', text: 'Region' },
-            { value: 'lattice', text: 'Integers' },
+            { value: 'region', text: t('build.points.fromRegion') },
+            { value: 'lattice', text: t('build.points.integers') },
         ];
         this.sourceSeg = segmented<PointsTool['source']>(body, {
-            label: 'Points from',
-            value: t.source,
+            label: t('build.points.source'),
+            value: tool.source,
             fill: true,
             cls: 'etz-layer-source',
-            options: this.is3D() ? sources.filter((s) => s.value === 'list' || s.value === t.source) : sources,
+            options: this.is3D() ? sources.filter((s) => s.value === 'list' || s.value === tool.source) : sources,
             onChange: (v) => {
-                t.source = v;
+                tool.source = v;
                 this.prefillReferences();
                 this.changed();
                 this.refreshSelects();
@@ -1328,135 +1343,135 @@ class PointsCard extends ToolCard<PointsTool> {
         });
 
         // List source.
-        const listField = field(body, { label: 'Points', layout: 'inline' });
+        const listField = field(body, { label: t('build.points.points'), layout: 'inline' });
         this.listRow = listField.el;
         const list = this.exprField(listField.controlEl, {
             id: 'points',
-            label: 'Points',
+            label: t('build.points.points'),
             kind: () => (this.is3D() ? 'tuples3' : 'tuples2'),
             placeholder: this.is3D() ? '(1, 2, 3); (0, 0, 1)' : '(1, 2); (3, 4)',
-            get: () => t.points,
+            get: () => tool.points,
             set: (v) => {
-                t.points = v;
+                tool.points = v;
             },
         });
         listField.bind(list.h.input);
 
         // Intersections source: two references.
-        const refsField = field(body, { label: 'Of', layout: 'inline', cls: 'etz-layer-refs' });
+        const refsField = field(body, { label: t('build.points.of'), layout: 'inline', cls: 'etz-layer-refs' });
         this.refsRow = refsField.el;
         const refCheck = (which: 'ref1' | 'ref2') => (v: string) => {
             // Blank shows the 'Choose...' entry; the missing-dependency line covers too few candidates.
             if (!v || this.crossables().length < 2) return null;
             const problem = this.refProblem(v);
             if (problem) return problem;
-            if (which === 'ref2' && v === t.ref1) return 'Choose two different items';
+            if (which === 'ref2' && v === tool.ref1) return t('build.points.different');
             return null;
         };
         const refOptions = (which: 'ref1' | 'ref2') => () => {
             const opts: DropdownOption<string>[] = this.crossables().map((c) => ({ value: c.name, text: c.text }));
-            if (!t[which]) opts.unshift({ value: '', text: 'Choose...' });
+            if (!tool[which]) opts.unshift({ value: '', text: t('build.points.choose') });
             return opts;
         };
         const refsWrap = refsField.controlEl.createDiv({ cls: 'etz-layer-row etz-layer-grow' });
         this.refs = (['ref1', 'ref2'] as const).map((which, i) => {
-            if (i === 1) this.andEl = refsWrap.createSpan({ cls: 'etz-layer-and', text: 'and' });
+            if (i === 1) this.andEl = refsWrap.createSpan({ cls: 'etz-layer-and', text: t('build.points.and') });
             return this.selectField(refsWrap, {
                 id: which,
-                label: i === 0 ? 'First function or curve' : 'Second function or curve',
+                label: t(i === 0 ? 'build.points.first' : 'build.points.second'),
                 options: refOptions(which),
-                get: () => t[which],
+                get: () => tool[which],
                 set: (v) => {
-                    t[which] = v;
+                    tool[which] = v;
                     // ref2 is checked against ref1.
                     if (which === 'ref1') this.refs[1].update();
                 },
                 check: refCheck(which),
             });
         });
-        this.missingFns = this.missingState(refsField.controlEl, '', 'Add function', () => this.addFunction());
+        this.missingFns = this.missingState(refsField.controlEl, '', t('build.add.function'), () => this.addFunction());
 
         // Region / integers source: a region.
-        const regionField = field(body, { label: 'Region', layout: 'inline' });
+        const regionField = field(body, { label: t('build.points.region'), layout: 'inline' });
         this.regionRow = regionField.el;
         this.region = this.selectField(regionField.controlEl, {
             id: 'regionName',
-            label: 'Region',
+            label: t('build.points.region'),
             options: () => {
                 const opts: DropdownOption<string>[] = this.regions().map((r) => ({
                     value: r.name,
                     text: r.conditions.some((c) => c.trim()) ? `${r.name}: ${squash(r.conditions.filter((c) => c.trim()).join(', '), 28)}` : r.name,
                 }));
-                if (t.source === 'lattice') opts.unshift({ value: '', text: 'Whole view' });
-                else if (!t.regionName) opts.unshift({ value: '', text: 'Choose...' });
+                if (tool.source === 'lattice') opts.unshift({ value: '', text: t('build.points.wholeView') });
+                else if (!tool.regionName) opts.unshift({ value: '', text: t('build.points.choose') });
                 return opts;
             },
-            get: () => t.regionName,
+            get: () => tool.regionName,
             set: (v) => {
-                t.regionName = v;
+                tool.regionName = v;
             },
             check: (v) => {
-                if (t.source !== 'region' && t.source !== 'lattice') return null;
+                if (tool.source !== 'region' && tool.source !== 'lattice') return null;
                 if (!v) return null;
                 const found = this.settingsList<Tool>('tools').find((x) => x && x.name === v);
-                if (!found) return `${v} does not exist`;
-                if (found.type !== 'region') return `${v} is not a region`;
+                if (!found) return t('build.points.missing', { name: v });
+                if (found.type !== 'region') return t('build.points.notRegion', { name: v });
                 return null;
             },
         });
-        this.missingRegion = this.missingState(regionField.controlEl, 'Needs a region.', 'Add feasible region', () => this.addRegion()).el;
+        this.missingRegion = this.missingState(regionField.controlEl, t('build.points.needsRegion'), t('build.add.feasibleRegion'), () => this.addRegion()).el;
 
         // Objective: keep only the best candidate(s).
-        const objField = field(body, { label: 'Objective', layout: 'inline', cls: 'etz-layer-objective' });
+        const objField = field(body, { label: t('build.points.objective'), layout: 'inline', cls: 'etz-layer-objective' });
         this.objectiveField = objField;
         const objective = this.exprField(objField.controlEl, {
             id: 'objective',
-            label: 'Objective',
+            label: t('build.points.objective'),
             kind: 'fn2',
             optional: true,
-            placeholder: 'optional: keep the best point',
-            get: () => t.objective,
+            placeholder: t('build.points.objectivePlaceholder'),
+            get: () => tool.objective,
             set: (v) => {
-                t.objective = v;
+                tool.objective = v;
             },
         });
         objField.bind(objective.h.input);
         this.senseSeg = segmented<'max' | 'min'>(objField.controlEl, {
-            label: 'Keep the',
-            value: t.sense,
+            label: t('build.points.sense'),
+            value: tool.sense,
             options: [
-                { value: 'max', text: 'Max' },
-                { value: 'min', text: 'Min' },
+                { value: 'max', text: t('common.max') },
+                { value: 'min', text: t('common.min') },
             ],
             onChange: (v) => {
-                t.sense = v;
+                tool.sense = v;
                 this.changed();
             },
         });
 
         // Labels: none / coordinates / custom template.
-        const labelField = field(body, { label: 'Label', layout: 'inline' });
+        const labelField = field(body, { label: t('common.label'), layout: 'inline' });
         this.labelSeg = segmented<LabelMode>(labelField.controlEl, {
-            label: 'Label',
+            label: t('common.label'),
             value: this.labelMode,
             fill: true,
             options: [
-                { value: 'none', text: 'None' },
-                { value: 'coords', text: 'Coordinates' },
-                { value: 'custom', text: 'Custom' },
+                { value: 'none', text: t('common.none') },
+                { value: 'coords', text: t('build.points.coordinates') },
+                { value: 'custom', text: t('build.points.custom') },
             ],
             onChange: (v) => this.setLabelMode(v),
         });
         labelField.bind(this.labelSeg.el);
         this.labelInput = this.exprField(labelField.controlEl, {
             id: 'label',
-            label: 'Label text',
+            label: t('build.points.labelText'),
             kind: 'template',
-            locals: t.dim === 3 ? LABEL_LOCALS.points3 : LABEL_LOCALS.points2,
-            placeholder: 'e.g. A; B; C or z = {val:2}',
-            get: () => t.label,
+            locals: tool.dim === 3 ? LABEL_LOCALS.points3 : LABEL_LOCALS.points2,
+            placeholder: t('build.points.labelPlaceholder'),
+            get: () => tool.label,
             set: (v) => {
-                t.label = v;
+                tool.label = v;
             },
         });
         // A 'label' issue reveals the template input when it is shown, else the mode switch.
@@ -1469,37 +1484,37 @@ class PointsCard extends ToolCard<PointsTool> {
         });
 
         // Marker size and drop lines.
-        const sizeField = field(body, { label: 'Size', layout: 'inline' });
+        const sizeField = field(body, { label: t('build.card.size'), layout: 'inline' });
         const size = segmented<MarkerSize>(sizeField.controlEl, {
-            label: 'Marker size',
-            value: t.size,
+            label: t('build.points.markerSize'),
+            value: tool.size,
             cls: 'etz-layer-size',
-            options: [shortOption('small', 'S', 'Small'), shortOption('normal', 'M', 'Medium'), shortOption('large', 'L', 'Large')],
+            options: sizeOptions<MarkerSize>('small', 'normal', 'large'),
             onChange: (v) => {
-                t.size = v;
+                tool.size = v;
                 this.changed();
             },
         });
         sizeField.bind(size.el);
         if (!this.is3D()) {
             this.dropLinesChip = chip(sizeField.controlEl, {
-                label: 'Drop lines',
-                value: t.dropLines,
+                label: t('build.points.dropLines'),
+                value: tool.dropLines,
                 onChange: (v) => {
-                    t.dropLines = v;
+                    tool.dropLines = v;
                     this.changed();
                 },
             });
         }
 
         this.onSync(() => {
-            this.sourceSeg.setValue(t.source);
-            this.senseSeg.setValue(t.sense);
-            size.setValue(t.size);
-            if (this.dropLinesChip) this.dropLinesChip.setValue(t.dropLines);
+            this.sourceSeg.setValue(tool.source);
+            this.senseSeg.setValue(tool.sense);
+            size.setValue(tool.size);
+            if (this.dropLinesChip) this.dropLinesChip.setValue(tool.dropLines);
             // Custom mode survives a refresh even while its text is blank or still
             // the coordinates template it started from (the user is editing it).
-            if (this.labelMode !== 'custom') this.labelMode = this.modeOf(t.label);
+            if (this.labelMode !== 'custom') this.labelMode = this.modeOf(tool.label);
             this.labelSeg.setValue(this.labelMode);
         });
     }
@@ -1507,22 +1522,22 @@ class PointsCard extends ToolCard<PointsTool> {
     private refProblem(name: string): string | null {
         if (this.crossables().some((c) => c.name === name)) return null;
         const fn = this.settingsList<FunctionParameters>('functions').find((f) => f && f.name === name);
-        if (fn && fn.parametric) return `${name} is parametric and cannot be intersected`;
+        if (fn && fn.parametric) return t('build.points.parametric', { name });
         const tool = this.settingsList<Tool>('tools').find((x) => x && x.name === name);
-        if (tool) return `${name} is not a function or curve`;
-        return `${name} does not exist`;
+        if (tool) return t('build.points.notCrossable', { name });
+        return t('build.points.missing', { name });
     }
 
     /** A source switch picks the chart's first candidates (like the recipes), so the card works at once. */
     private prefillReferences(): void {
-        const t = this.tool;
-        if (t.source === 'intersections') {
+        const tool = this.tool;
+        if (tool.source === 'intersections') {
             const names = this.crossables().map((c) => c.name);
-            if (!t.ref1) t.ref1 = names.find((n) => n !== t.ref2) ?? '';
-            if (!t.ref2) t.ref2 = names.find((n) => n !== t.ref1) ?? '';
-        } else if ((t.source === 'region' || t.source === 'lattice') && !t.regionName) {
+            if (!tool.ref1) tool.ref1 = names.find((n) => n !== tool.ref2) ?? '';
+            if (!tool.ref2) tool.ref2 = names.find((n) => n !== tool.ref1) ?? '';
+        } else if ((tool.source === 'region' || tool.source === 'lattice') && !tool.regionName) {
             const first = this.regions()[0];
-            if (first) t.regionName = first.name;
+            if (first) tool.regionName = first.name;
         }
     }
 
@@ -1532,14 +1547,14 @@ class PointsCard extends ToolCard<PointsTool> {
     }
 
     private setLabelMode(mode: LabelMode): void {
-        const t = this.tool;
+        const tool = this.tool;
         const prev = this.labelMode;
         this.labelMode = mode;
-        if (mode === 'none') t.label = '';
-        else if (mode === 'coords') t.label = this.coordLabels()[0];
+        if (mode === 'none') tool.label = '';
+        else if (mode === 'coords') tool.label = this.coordLabels()[0];
         // Custom starts from the coordinates template (easy to edit) or blank.
-        else if (prev === 'none') t.label = '';
-        this.labelInput.h.setValue(t.label);
+        else if (prev === 'none') tool.label = '';
+        this.labelInput.h.setValue(tool.label);
         this.changed();
         if (mode === 'custom') this.labelInput.h.focus();
     }
@@ -1574,72 +1589,80 @@ class PointsCard extends ToolCard<PointsTool> {
     }
 
     protected syncState(): void {
-        const t = this.tool;
+        const tool = this.tool;
         if (!this.labelInput) return;
-        this.sourceSeg.el.toggleClass('tikz-hidden', this.is3D() && t.source === 'list');
-        this.listRow.toggleClass('tikz-hidden', t.source !== 'list');
-        this.refsRow.toggleClass('tikz-hidden', t.source !== 'intersections');
-        this.regionRow.toggleClass('tikz-hidden', t.source !== 'region' && t.source !== 'lattice');
+        this.sourceSeg.el.toggleClass('tikz-hidden', this.is3D() && tool.source === 'list');
+        this.listRow.toggleClass('tikz-hidden', tool.source !== 'list');
+        this.refsRow.toggleClass('tikz-hidden', tool.source !== 'intersections');
+        this.regionRow.toggleClass('tikz-hidden', tool.source !== 'region' && tool.source !== 'lattice');
 
         const crossables = this.crossables().length;
-        const fnsMissing = t.source === 'intersections' && crossables < 2;
+        const fnsMissing = tool.source === 'intersections' && crossables < 2;
         this.missingFns.el.toggleClass('tikz-hidden', !fnsMissing);
-        this.missingFns.setText(crossables === 0 ? 'Needs two functions or curves.' : 'Add a second function first.');
+        this.missingFns.setText(t(crossables === 0 ? 'build.points.needsTwo' : 'build.points.addSecond'));
         for (const r of this.refs) r.el.toggleClass('tikz-hidden', fnsMissing);
         this.andEl.toggleClass('tikz-hidden', fnsMissing);
 
-        const regionMissing = t.source === 'region' && this.regions().length === 0 && !t.regionName;
+        const regionMissing = tool.source === 'region' && this.regions().length === 0 && !tool.regionName;
         this.missingRegion.toggleClass('tikz-hidden', !regionMissing);
         this.region.el.toggleClass('tikz-hidden', regionMissing);
 
         this.objectiveField.el.toggleClass('tikz-hidden', !this.showObjective);
-        this.senseSeg.setDisabled(!t.objective.trim());
+        this.senseSeg.setDisabled(!tool.objective.trim());
         // Source 'Region' marks the corners; with an objective it is the continuous
         // optimum, which may lie on an edge or inside. The hint says which one applies.
-        const rn = t.regionName || 'the region';
+        const region = tool.regionName;
         this.objectiveField.setHint(
-            t.source !== 'region'
+            tool.source !== 'region'
                 ? ''
-                : t.objective.trim()
-                  ? `Best point anywhere in ${rn}: inside, on an edge or at a corner.`
-                  : `Marks every corner of ${rn}. Add an objective to keep only the best point.`
+                : tool.objective.trim()
+                  ? region
+                      ? t('build.points.bestIn', { region })
+                      : t('build.points.bestInRegion')
+                  : region
+                    ? t('build.points.everyCorner', { region })
+                    : t('build.points.everyCornerRegion')
         );
         this.labelInput.h.el.toggleClass('tikz-hidden', this.labelMode !== 'custom');
         this.labelSeg.setValue(this.labelMode);
     }
 
+    /** 'Corners of R1', 'Max of 2x + 3y over R1', 'Points (1, 2); (3, 4)', ...: one whole text per case, so a translation can order it. */
     protected summary(): string {
-        const t = this.tool;
-        let where: string;
-        switch (t.source) {
+        const tool = this.tool;
+        const objective = squash(tool.objective);
+        const min = tool.sense === 'min';
+        switch (tool.source) {
             case 'list': {
-                const pts = listEntries(t.points);
-                if (!pts.length) return 'Points: type a list';
-                where = pts.length === 1 ? `the point ${pts[0]}` : `${pts.length} points ${pts.join('; ')}`;
-                break;
+                const pts = listEntries(tool.points);
+                if (!pts.length) return t('build.points.empty');
+                if (pts.length === 1) {
+                    if (!objective) return t('build.points.point', { point: pts[0] });
+                    return t(min ? 'build.points.minPoint' : 'build.points.maxPoint', { objective, point: pts[0] });
+                }
+                if (!objective) return t('build.points.pointList', { points: pts.join('; ') });
+                return t(min ? 'build.points.minPoints' : 'build.points.maxPoints', { objective, count: pts.length, points: pts.join('; ') });
             }
-            case 'intersections':
-                where = `crossings of ${t.ref1 || '?'} and ${t.ref2 || '?'}`;
-                break;
-            case 'region':
-                where = `corners of ${t.regionName || '?'}`;
-                break;
-            case 'lattice':
-                where = `integer points in ${t.regionName || 'the view'}`;
-                break;
-        }
-        const objective = squash(t.objective);
-        if (!objective) {
-            if (t.source === 'list') {
-                const pts = listEntries(t.points);
-                return pts.length === 1 ? `Point ${pts[0]}` : `Points ${pts.join('; ')}`;
+            case 'intersections': {
+                const pair = { first: tool.ref1 || '?', second: tool.ref2 || '?' };
+                if (!objective) return t('build.points.crossings', pair);
+                return t(min ? 'build.points.minCrossings' : 'build.points.maxCrossings', { objective, ...pair });
             }
-            return capitalize(where);
+            case 'region': {
+                const region = tool.regionName || '?';
+                if (!objective) return t('build.points.corners', { region });
+                return t(min ? 'build.points.minOver' : 'build.points.maxOver', { objective, region });
+            }
+            case 'lattice': {
+                const region = tool.regionName;
+                if (!region) {
+                    if (!objective) return t('build.points.integerPointsView');
+                    return t(min ? 'build.points.minIntegersView' : 'build.points.maxIntegersView', { objective });
+                }
+                if (!objective) return t('build.points.integerPoints', { region });
+                return t(min ? 'build.points.minIntegers' : 'build.points.maxIntegers', { objective, region });
+            }
         }
-        const best = `${t.sense === 'min' ? 'Min' : 'Max'} of ${objective}`;
-        if (t.source === 'region') return `${best} over ${t.regionName || '?'}`;
-        if (t.source === 'lattice') return `${best} over ${where}`;
-        return `${best} among ${where}`;
     }
 }
 
@@ -1653,82 +1676,83 @@ class SegmentCard extends ToolCard<SegmentTool> {
     }
 
     private build(): void {
-        const t = this.tool;
-        const is3D = t.dim === 3;
-        const pathField = field(this.body, { label: 'Path', layout: 'inline' });
+        const tool = this.tool;
+        const is3D = tool.dim === 3;
+        const pathField = field(this.body, { label: t('build.segment.path'), layout: 'inline' });
         const path = this.exprField(pathField.controlEl, {
             id: 'path',
-            label: 'Path',
-            kind: () => (t.dim === 3 ? 'path3' : 'path2'),
+            label: t('build.segment.path'),
+            kind: () => (tool.dim === 3 ? 'path3' : 'path2'),
             placeholder: is3D ? '(0, 0, 0); (1, 1, 1)' : '(0, 0); (3, 2)',
-            get: () => t.path,
+            get: () => tool.path,
             set: (v) => {
-                t.path = v;
+                tool.path = v;
             },
         });
         pathField.bind(path.h.input);
 
         // Braces are 2D only; a 3D segment keeps the option only while it is selected.
         const styles: Array<SegmentOption<SegmentStyle>> = [
-            { value: 'line', text: 'Line' },
-            { value: 'forward', icon: 'arrow-right', ariaLabel: 'Arrow at the end' },
-            { value: 'backward', icon: 'arrow-left', ariaLabel: 'Arrow at the start' },
-            { value: 'both', icon: 'move-horizontal', ariaLabel: 'Arrows at both ends' },
-            { value: 'brace', text: 'Brace' },
+            { value: 'line', text: t('build.segment.line') },
+            { value: 'forward', icon: 'arrow-right', ariaLabel: t('build.segment.arrowEnd') },
+            { value: 'backward', icon: 'arrow-left', ariaLabel: t('build.segment.arrowStart') },
+            { value: 'both', icon: 'move-horizontal', ariaLabel: t('build.segment.arrowBoth') },
+            { value: 'brace', text: t('build.segment.brace') },
         ];
-        const styleField = field(this.body, { label: 'Style', layout: 'inline' });
+        const styleField = field(this.body, { label: t('build.card.style'), layout: 'inline' });
         const style = segmented<SegmentStyle>(styleField.controlEl, {
-            label: 'Style',
-            value: t.style,
-            options: is3D ? styles.filter((s) => s.value !== 'brace' || t.style === 'brace') : styles,
+            label: t('build.card.style'),
+            value: tool.style,
+            options: is3D ? styles.filter((s) => s.value !== 'brace' || tool.style === 'brace') : styles,
             onChange: (v) => {
-                t.style = v;
+                tool.style = v;
                 this.changed();
             },
         });
         styleField.bind(style.el);
 
         this.lineRow({
-            thickness: () => t.thickness,
+            thickness: () => tool.thickness,
             setThickness: (v) => {
-                t.thickness = v;
+                tool.thickness = v;
             },
             chips: [
                 {
-                    label: 'Dashed',
-                    get: () => t.dashed,
+                    label: t('common.dashed'),
+                    get: () => tool.dashed,
                     set: (v) => {
-                        t.dashed = v;
+                        tool.dashed = v;
                     },
                 },
                 {
-                    label: 'Closed',
-                    get: () => t.closed,
+                    label: t('build.segment.closed'),
+                    get: () => tool.closed,
                     set: (v) => {
-                        t.closed = v;
+                        tool.closed = v;
                     },
                 },
             ],
         });
-        this.labelField('optional, e.g. width');
-        this.onSync(() => style.setValue(t.style));
+        this.labelField(t('build.segment.labelPlaceholder'));
+        this.onSync(() => style.setValue(tool.style));
     }
 
     protected summary(): string {
-        const t = this.tool;
-        const pts = listEntries(t.path);
-        if (!pts.length) return 'Segment: type two points';
-        let kind: string;
-        if (t.style === 'brace') kind = 'Brace';
-        else if (t.style !== 'line') kind = pts.length > 2 ? 'Arrows' : 'Arrow';
-        else if (t.closed) kind = 'Polygon';
-        else kind = pts.length > 2 ? 'Path' : 'Segment';
-        const label = squash(t.label);
+        const tool = this.tool;
+        const pts = listEntries(tool.path);
+        if (!pts.length) return t('build.segment.empty');
+        let shape: MessageKey;
+        if (tool.style === 'brace') shape = 'build.segment.kindBrace';
+        else if (tool.style !== 'line') shape = pts.length > 2 ? 'build.segment.kindArrows' : 'build.segment.kindArrow';
+        else if (tool.closed) shape = 'build.segment.kindPolygon';
+        else shape = pts.length > 2 ? 'build.segment.kindPath' : 'build.segment.kindSegment';
+        const kind = t(shape);
+        const label = squash(tool.label);
         let text: string;
-        if (pts.length === 1) text = `${kind} through ${pts[0]}`;
-        else if (pts.length === 2 || t.style === 'brace') text = `${kind} ${pts[0]} to ${pts[1]}`;
-        else text = `${kind} through ${pts.length} points`;
-        return label ? `${text}: ${label}` : text;
+        if (pts.length === 1) text = t('build.segment.through', { kind, point: pts[0] });
+        else if (pts.length === 2 || tool.style === 'brace') text = t('build.segment.fromTo', { kind, from: pts[0], to: pts[1] });
+        else text = t('build.segment.throughCount', { kind, count: pts.length });
+        return label ? t('build.segment.labelled', { text, label }) : text;
     }
 }
 
@@ -1742,18 +1766,18 @@ class PlaneCard extends ToolCard<PlaneTool> {
     }
 
     private build(): void {
-        const t = this.tool;
-        const planeField = field(this.body, { label: 'Plane', layout: 'inline', cls: 'etz-layer-plane' });
+        const tool = this.tool;
+        const planeField = field(this.body, { label: t('build.plane.plane'), layout: 'inline', cls: 'etz-layer-plane' });
         const axis = segmented<PlaneTool['axis']>(planeField.controlEl, {
-            label: 'Constant axis',
-            value: t.axis,
+            label: t('build.plane.axis'),
+            value: tool.axis,
             options: [
                 { value: 'x', text: 'x' },
                 { value: 'y', text: 'y' },
                 { value: 'z', text: 'z' },
             ],
             onChange: (v) => {
-                t.axis = v;
+                tool.axis = v;
                 this.changed();
             },
         });
@@ -1761,38 +1785,38 @@ class PlaneCard extends ToolCard<PlaneTool> {
         planeField.controlEl.createSpan({ cls: 'etz-layer-eq', text: '=', attr: { 'aria-hidden': 'true' } });
         this.exprField(planeField.controlEl, {
             id: 'value',
-            label: 'Value',
+            label: t('build.plane.value'),
             kind: 'value',
             required: true,
-            placeholder: 'e.g. 0 or h',
-            get: () => t.value,
+            placeholder: t('build.plane.valuePlaceholder'),
+            get: () => tool.value,
             set: (v) => {
-                t.value = v;
+                tool.value = v;
             },
         });
 
-        const opField = field(this.body, { label: 'Opacity', layout: 'inline' });
+        const opField = field(this.body, { label: t('build.card.opacity'), layout: 'inline' });
         const opacity = liveSlider(opField.controlEl, {
             min: 0,
             max: 1,
             step: 0.05,
-            value: t.fillOpacity,
-            label: 'Opacity',
+            value: tool.fillOpacity,
+            label: t('build.card.opacity'),
             format: percent,
             onInput: (v) => {
-                t.fillOpacity = v;
+                tool.fillOpacity = v;
                 this.frame();
             },
         });
         opField.bind(opacity.input);
         this.onSync(() => {
-            axis.setValue(t.axis);
-            opacity.setValue(t.fillOpacity);
+            axis.setValue(tool.axis);
+            opacity.setValue(tool.fillOpacity);
         });
     }
 
     protected summary(): string {
-        return `Plane ${this.tool.axis} = ${squash(this.tool.value) || '?'}`;
+        return t('build.plane.summary', { axis: this.tool.axis, value: squash(this.tool.value) || '?' });
     }
 }
 
@@ -1815,8 +1839,8 @@ class LabelCard extends BaseCard {
         const list = host.settings.getValue<Annotation[] | undefined>('annotations');
         const ann = Array.isArray(list) ? list[index] : undefined;
         return {
-            kind: 'Text label',
-            name: `Label ${index + 1}`,
+            kind: t('build.kind.label'),
+            name: t('build.label.name', { n: index + 1 }),
             color: ann ? ann.color : 'black',
             visible: !(ann && ann.hidden),
             renamable: false,
@@ -1855,12 +1879,12 @@ class LabelCard extends BaseCard {
 
     private build(): void {
         const is3D = this.host.is3D();
-        const textField = field(this.body, { label: 'Text', layout: 'inline' });
+        const textField = field(this.body, { label: t('build.label.text'), layout: 'inline' });
         const text = this.exprField(textField.controlEl, {
             id: 'text',
-            label: 'Text',
+            label: t('build.label.text'),
             kind: 'template',
-            placeholder: 'e.g. Optimum or z = {P1_val:2}',
+            placeholder: t('build.label.textPlaceholder'),
             get: () => this.ann().text,
             set: (v) => {
                 this.ann().text = v;
@@ -1869,7 +1893,7 @@ class LabelCard extends BaseCard {
         textField.bind(text.h.input);
 
         // Position: one value input per axis (expressions, sliders and P1_x allowed).
-        const posField = field(this.body, { label: 'Position', layout: 'inline', cls: 'etz-layer-position' });
+        const posField = field(this.body, { label: t('build.label.position'), layout: 'inline', cls: 'etz-layer-position' });
         const axes: Array<'x' | 'y' | 'z'> = is3D ? ['x', 'y', 'z'] : ['x', 'y'];
         const posRow = posField.controlEl.createDiv({ cls: 'etz-layer-pos' });
         for (const axis of axes) {
@@ -1877,7 +1901,7 @@ class LabelCard extends BaseCard {
             cell.createSpan({ cls: 'etz-layer-pos-axis', text: axis, attr: { 'aria-hidden': 'true' } });
             this.exprField(cell, {
                 id: axis,
-                label: `${axis} position`,
+                label: t('build.label.axisPosition', { axis }),
                 kind: 'value',
                 required: true,
                 placeholder: '0',
@@ -1889,12 +1913,12 @@ class LabelCard extends BaseCard {
         }
         this.dragHint = posField.hintEl;
 
-        const sizeField = field(this.body, { label: 'Size', layout: 'inline' });
+        const sizeField = field(this.body, { label: t('build.card.size'), layout: 'inline' });
         const size = segmented<AnnotationSize>(sizeField.controlEl, {
-            label: 'Text size',
+            label: t('build.label.textSize'),
             value: this.ann().size,
             cls: 'etz-layer-size',
-            options: [shortOption('small', 'S', 'Small'), shortOption('normal', 'M', 'Medium'), shortOption('large', 'L', 'Large')],
+            options: sizeOptions<AnnotationSize>('small', 'normal', 'large'),
             onChange: (v) => {
                 this.ann().size = v;
                 this.changed();
@@ -1902,16 +1926,16 @@ class LabelCard extends BaseCard {
         });
         sizeField.bind(size.el);
 
-        const anchorField = field(this.body, { label: 'Place', layout: 'inline' });
+        const anchorField = field(this.body, { label: t('build.label.place'), layout: 'inline' });
         const anchor = segmented<AnnotationAnchor>(anchorField.controlEl, {
-            label: 'Place the text',
+            label: t('build.label.placeText'),
             value: this.ann().anchor,
             options: [
-                { value: 'center', icon: 'circle-dot', ariaLabel: 'Centred on the point' },
-                { value: 'above', icon: 'arrow-up', ariaLabel: 'Above the point' },
-                { value: 'below', icon: 'arrow-down', ariaLabel: 'Below the point' },
-                { value: 'left', icon: 'arrow-left', ariaLabel: 'Left of the point' },
-                { value: 'right', icon: 'arrow-right', ariaLabel: 'Right of the point' },
+                { value: 'center', icon: 'circle-dot', ariaLabel: t('build.label.center') },
+                { value: 'above', icon: 'arrow-up', ariaLabel: t('build.label.above') },
+                { value: 'below', icon: 'arrow-down', ariaLabel: t('build.label.below') },
+                { value: 'left', icon: 'arrow-left', ariaLabel: t('build.label.left') },
+                { value: 'right', icon: 'arrow-right', ariaLabel: t('build.label.right') },
             ],
             onChange: (v) => {
                 this.ann().anchor = v;
@@ -1934,7 +1958,7 @@ class LabelCard extends BaseCard {
         }
         // Dragging writes numbers, or adds an offset to an expression position (SPEC3 1.4). The example is an
         // identifier, kept out of the checked sentence.
-        this.dragHint.setText(`Drag the label in the preview to move it. Expression positions get an offset, e.g. ${OFFSET_EXAMPLE}.`);
+        this.dragHint.setText(t('build.label.dragHint', { example: OFFSET_EXAMPLE }));
         this.dragHint.removeClass('tikz-hidden');
     }
 
@@ -1946,8 +1970,8 @@ class LabelCard extends BaseCard {
     protected summary(): string {
         const a = this.ann();
         const text = squash(a.text);
-        if (!text) return 'Empty label';
+        if (!text) return t('build.label.empty');
         const pos = this.host.is3D() ? [a.x, a.y, a.z ?? ''] : [a.x, a.y];
-        return `"${text}" at (${pos.map((p) => squash(p) || '?').join(', ')})`;
+        return t('build.label.summary', { text, position: pos.map((p) => squash(p) || '?').join(', ') });
     }
 }

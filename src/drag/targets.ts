@@ -7,7 +7,7 @@
 import { Node, linearForm, parse, parseTuples, tokenize, formatNumber, identifierTokens } from '../expr';
 import { MathContext, conditionClauseNodes } from '../mathcontext';
 import type { Annotation, CurveTool, FunctionParameters, Parameter, PointsTool, RegionTool, SegmentTool, Tool } from '../types';
-import { lockFor } from './describe';
+import { conditionName, labelName, levelName, lockFor, pointName, tangentName } from './describe';
 import type { DragContext, DragTarget, FieldRef, Hit, HitShape, Lock, Pt, UnitSpec, VirtualKind } from './types';
 
 export interface ChartData {
@@ -133,7 +133,7 @@ export function resolveTarget(hit: Hit | { label: number; at: { x: number; y: nu
     } catch {
         // Never throw into the pointer handler: an unreadable target is locked.
         const shape = 'label' in hit ? null : hit.shape;
-        const subject = shape ? shape.source : `Label ${('label' in hit ? hit.label : 0) + 1}`;
+        const subject = shape ? shape.source : labelName('label' in hit ? hit.label : 0);
         return locked(baseFrom(shape, subject), lockFor({ kind: 'nothing', subject }));
     }
 }
@@ -192,7 +192,7 @@ function functionTarget(name: string, shape: HitShape, run: number, ctx: DragCon
 
 function tangentTarget(shape: HitShape, hit: Hit, ctx: DragContext): DragTarget {
     const name = shape.source;
-    const base = baseFrom(shape, `${name} tangent`);
+    const base = baseFrom(shape, tangentName(name));
     base.cardSource = name;
     base.cardField = 'tangentPoint';
     base.fn = name;
@@ -218,7 +218,7 @@ function clauseTarget(shape: HitShape, hit: Hit, entry: number, disjunct: number
     const tool = toolById(shape.itemKey, ctx) as RegionTool | null;
     const name = tool ? tool.name : shape.source;
     const label = tool && Array.isArray(tool.conditionLabels) ? str(tool.conditionLabels[entry]).trim() : '';
-    const subject = label ? `${name} ${label}` : `${name} condition ${entry + 1}`;
+    const subject = label ? `${name} ${label}` : conditionName(name, entry);
     const base = baseFrom(shape, subject);
     base.cardSource = name;
     base.cardField = `condition:${entry}`;
@@ -305,7 +305,7 @@ function levelTarget(shape: HitShape, hit: Hit, item: number, ctx: DragContext):
         };
     }
     const value = levelValue(str(tool.levels), item, ctx.math);
-    base.subject = `${name} level ${Number.isFinite(value) ? formatNumber(value) : item + 1}`;
+    base.subject = levelName(name, Number.isFinite(value) ? formatNumber(value) : item + 1);
     base.cardField = 'levels';
     return {
         ...base,
@@ -327,7 +327,7 @@ function levelTarget(shape: HitShape, hit: Hit, item: number, ctx: DragContext):
 function pointTarget(shape: HitShape, item: number, ctx: DragContext): DragTarget {
     const tool = toolById(shape.itemKey, ctx) as PointsTool | null;
     const name = tool ? tool.name : shape.source;
-    const subject = item >= 0 ? `${name} point ${item + 1}` : name;
+    const subject = item >= 0 ? pointName(name, item) : name;
     const base = baseFrom(shape, subject);
     base.cardSource = name;
     base.cardField = 'points';
@@ -378,7 +378,7 @@ function computedLock(tool: PointsTool, kind: HitShape['locked'], ctx: DragConte
 function vertexTarget(shape: HitShape, index: number, item: number, ctx: DragContext): DragTarget {
     const tool = toolById(shape.itemKey, ctx) as SegmentTool | null;
     const name = tool ? tool.name : shape.source;
-    const subject = `${name} point ${index + 1}`;
+    const subject = pointName(name, index);
     const base = baseFrom(shape, subject);
     base.cardSource = name;
     base.cardField = 'path';
@@ -442,7 +442,7 @@ function legTarget(shape: HitShape, hit: Hit, ctx: DragContext): DragTarget {
 }
 
 function labelTarget(index: number, at: { x: number; y: number }, ctx: DragContext): DragTarget {
-    const subject = `Label ${index + 1}`;
+    const subject = labelName(index);
     const base = baseFrom(null, subject);
     base.key = `label:${index}`;
     base.source = `label:${index}`;
@@ -584,7 +584,7 @@ export function sliderUsers(name: string, t: DragTarget, ctx: DragContext): stri
     }
     (ctx.annotations || []).forEach((a, i) => {
         if (!a || (t.kind === 'label' && t.cardSource === `label:${i}`)) return;
-        if (reads(a.x, false) || reads(a.y, false) || reads(a.text, true)) users.push(`Label ${i + 1}`);
+        if (reads(a.x, false) || reads(a.y, false) || reads(a.text, true)) users.push(labelName(i));
     });
     return users;
 }

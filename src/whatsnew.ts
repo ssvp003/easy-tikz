@@ -24,9 +24,10 @@ import { GUIDES } from './guides';
 import { defaultFunction, defaultTool, EXAMPLES } from './migrate';
 import { printChartText } from './text/print';
 import type { FunctionParameters, Parameter, RegionTool } from './types';
+import { MessageKey, MessageValues, t, tIn } from './i18n';
 
 /** Version of the popup's content. Raise it when the popup says something new. */
-export const WHATS_NEW_VERSION = '4.6.0';
+export const WHATS_NEW_VERSION = '4.7.0';
 
 /**
  * Compare two version strings numerically, part by part ('4.10.0' > '4.9.1',
@@ -121,91 +122,62 @@ export interface WhatsNewItem {
     guide?: string;
 }
 
+/**
+ * An item whose title and text are read in the reader's language each time
+ * they are shown: the language is set after this module loads, and the tests
+ * read them in English.
+ */
+function item(icon: string, title: MessageKey, text: MessageKey, guide?: string, values?: MessageValues): WhatsNewItem {
+    const out: WhatsNewItem = {
+        icon,
+        get title() {
+            return t(title);
+        },
+        get text() {
+            return t(text, values);
+        },
+    };
+    if (guide) out.guide = guide;
+    return out;
+}
+
 export const WHATS_NEW_TITLE = 'Easy TikZ 4';
-export const WHATS_NEW_SUBTITLE = 'Write a chart in plain words, or in your own, and watch it draw under the block as you type.';
 
-/** The heading of the newest items, at the top. */
-export const WHATS_NEW_RECENT_TITLE = 'New in 4.5 and 4.6';
+/** The line under the title, in the reader's language. */
+export const whatsNewSubtitle = (): string => t('panels.whatsNew.subtitle');
+/** The same line in English, as the tests read it. */
+export const WHATS_NEW_SUBTITLE = tIn('en', 'panels.whatsNew.subtitle');
 
-/** New in 4.5 and 4.6, at the top. */
+/** The heading of the newest items, at the top, in the reader's language. */
+export const whatsNewRecentTitle = (): string => t('panels.whatsNew.recentTitle');
+/** The same heading in English, as the tests read it. */
+export const WHATS_NEW_RECENT_TITLE = tIn('en', 'panels.whatsNew.recentTitle');
+
+/** New in 4.6 and 4.7, at the top. */
 export const WHATS_NEW_RECENT: WhatsNewItem[] = [
-    {
-        icon: 'languages',
-        title: 'Your own chart words',
-        text: 'Give any piece of the chart language your own words, in your language or your own terms. Settings, Chart words.',
-    },
-    {
-        icon: 'type',
-        title: 'Charts in plain words',
-        text: 'One line per object: `plot f(x) = x^2 in blue`. The editor writes these lines too, and keeps your other lines and comments.',
-    },
-    {
-        icon: 'eye',
-        title: 'The chart under the block',
-        text: 'While you edit a block in Live Preview, its chart sits right under it and changes as you type.',
-    },
-    {
-        icon: 'smartphone',
-        title: 'On phones and tablets',
-        text: "Charts draw in your notes on iOS and Android, and take your theme's colours in light and dark mode.",
-    },
+    item('globe', 'panels.whatsNew.language.title', 'panels.whatsNew.language.text'),
+    item('languages', 'panels.whatsNew.words.title', 'panels.whatsNew.words.text'),
+    item('type', 'panels.whatsNew.plain.title', 'panels.whatsNew.plain.text'),
+    item('eye', 'panels.whatsNew.under.title', 'panels.whatsNew.under.text'),
 ];
 
 /** Next to the live chart: sliders and the values computed from them. */
 export const WHATS_NEW_LIVE: WhatsNewItem[] = [
-    {
-        icon: 'sliders-horizontal',
-        title: 'Live sliders',
-        text: 'Any number can be a slider: in formulas, conditions, labels and axis ranges. Drag it or press play, and the picture moves along.',
-        guide: 'sliders',
-    },
-    {
-        icon: 'calculator',
-        title: 'Live calculations',
-        text: 'Computed points publish values like `P1_x` and `P1_val`. Use them in other formulas, or print them in labels: `{P1_val:2}`.',
-        guide: 'computed-values',
-    },
-    {
-        icon: 'file-text',
-        title: 'Sliders in your notes',
-        text: 'Charts in notes keep working sliders. Moving them never changes the note.',
-        guide: 'charts-in-notes',
-    },
+    item('sliders-horizontal', 'panels.whatsNew.sliders.title', 'panels.whatsNew.sliders.text', 'sliders'),
+    item('calculator', 'panels.whatsNew.calculations.title', 'panels.whatsNew.calculations.text', 'computed-values'),
+    item('file-text', 'panels.whatsNew.notes.title', 'panels.whatsNew.notes.text', 'charts-in-notes'),
 ];
 
 /** The rest of version 4, one line each. */
 export const WHATS_NEW_MORE: WhatsNewItem[] = [
-    {
-        icon: 'layout-panel-left',
-        title: 'A redesigned editor',
-        text: 'Five tabs, one card per object, and a preview that follows as you type.',
-    },
-    {
-        icon: 'move',
-        title: 'Drag to edit',
-        text: 'Drag a line or a point and its formula follows. Shift turns or stretches.',
-    },
-    {
-        icon: 'shapes',
-        title: 'Five general tools, not eleven',
-        text: 'Regions from inequalities, curves from equations, points (intersections, corners, the optimum), segments, 3D planes.',
-    },
-    {
-        icon: 'file-code',
-        title: 'Export to LaTeX that compiles',
-        text: 'A standalone document by default, in the colours and layers of the preview.',
-    },
-    {
-        icon: 'book-open',
-        title: 'Guides in the Help tab',
-        // The count comes from the guide list, so a new guide never leaves this line behind.
-        text: `${GUIDES.length} step-by-step guides with live charts, and a reference you can search.`,
-    },
-    {
-        icon: 'history',
-        title: 'Charts from 3.x carry over',
-        text: 'They are converted when they open. The note changes only when you save.',
-    },
+    item('layout-panel-left', 'panels.whatsNew.editor.title', 'panels.whatsNew.editor.text'),
+    item('move', 'panels.whatsNew.drag.title', 'panels.whatsNew.drag.text'),
+    item('shapes', 'panels.whatsNew.tools.title', 'panels.whatsNew.tools.text'),
+    item('file-code', 'panels.whatsNew.latex.title', 'panels.whatsNew.latex.text'),
+    // The count comes from the guide list, so a new guide never leaves this line behind.
+    item('book-open', 'panels.whatsNew.guides.title', 'panels.whatsNew.guides.text', undefined, { count: GUIDES.length }),
+    item('history', 'panels.whatsNew.carryOver.title', 'panels.whatsNew.carryOver.text'),
+    item('smartphone', 'panels.whatsNew.phones.title', 'panels.whatsNew.phones.text'),
 ];
 
 /** The live chart as its block writes it: what you type, line by line (src/text). */
@@ -214,11 +186,7 @@ export function whatsNewText(): string {
 }
 
 /** New in 4.3: AI makes charts. Its button opens the editor's AI tab. */
-export const WHATS_NEW_AI: WhatsNewItem = {
-    icon: 'bot',
-    title: 'Let AI make your charts',
-    text: 'Claude Code, Codex, Cursor and other AI apps check charts and add them to your notes. ChatGPT gets a guide to paste.',
-};
+export const WHATS_NEW_AI: WhatsNewItem = item('bot', 'panels.whatsNew.ai.title', 'panels.whatsNew.ai.text');
 
 /** Every icon the popup uses (its items, buttons and the Help tab link). */
 export const WHATS_NEW_ICONS: readonly string[] = [

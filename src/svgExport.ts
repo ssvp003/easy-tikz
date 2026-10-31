@@ -5,6 +5,7 @@
  * server's render_chart tool, so an AI app sees what the user sees.
  */
 import { stripLatex } from './util';
+import { t } from './i18n';
 
 /**
  * A copy of `svg` that renders on its own: MathJax labels (foreignObject)
@@ -65,9 +66,12 @@ export function exportableSvg(svg: SVGElement, doc: Document): SVGElement {
 /**
  * Rasterize an exportable SVG (see exportableSvg) at `scale` times its size.
  * `background` paints the canvas first (a theme colour); without it the PNG
- * is transparent, as Copy PNG has always been.
+ * is transparent, as Copy PNG has always been. Its error messages are in
+ * the language of the call (the AI server calls it inside inEnglish).
  */
 export async function svgToPng(svg: SVGElement, scale = 2, background?: string): Promise<Blob> {
+    // Written before the first await, while the caller's language holds.
+    const failed = { raster: t('problems.render.rasterFailed'), canvas: t('problems.render.noCanvas'), png: t('problems.render.pngFailed') };
     const svgString = new XMLSerializer().serializeToString(svg);
     const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -77,14 +81,14 @@ export async function svgToPng(svg: SVGElement, scale = 2, background?: string):
         const img = new Image();
         await new Promise<void>((resolve, reject) => {
             img.onload = () => resolve();
-            img.onerror = () => reject(new Error('Failed to rasterize SVG'));
+            img.onerror = () => reject(new Error(failed.raster));
             img.src = url;
         });
         const canvas = createEl('canvas');
         canvas.width = Math.round(width * scale);
         canvas.height = Math.round(height * scale);
         const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('Canvas 2D context unavailable');
+        if (!ctx) throw new Error(failed.canvas);
         if (background) {
             ctx.fillStyle = background;
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -92,7 +96,7 @@ export async function svgToPng(svg: SVGElement, scale = 2, background?: string):
         ctx.scale(scale, scale);
         ctx.drawImage(img, 0, 0, width, height);
         const png = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'));
-        if (!png) throw new Error('Could not encode PNG');
+        if (!png) throw new Error(failed.png);
         return png;
     } finally {
         URL.revokeObjectURL(url);

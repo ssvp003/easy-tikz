@@ -31,6 +31,7 @@ import {
     labelMetricsFor,
 } from './scene';
 import { Grid, Pt, View, pointInRings } from './geometry';
+import { t as msg } from './i18n';
 
 /** CONTRACT (v4): options for one render. */
 export interface SVGRendererOptions {
@@ -397,7 +398,7 @@ export class SVGRenderer {
         };
         this.drawn = null;
         if (this.viewFallback) {
-            this.addIssue({ source: 'chart', message: 'Invalid axis range, showing the default view', severity: 'error' });
+            this.addIssue({ source: 'chart', message: msg('problems.render.invalidRange'), severity: 'error' });
         }
 
         const svg = this.el('svg', {
@@ -656,7 +657,7 @@ export class SVGRenderer {
             if (this.cache) lastGoodScene.set(this.cache, scene);
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
-            this.addIssue({ source: 'chart', message: `Could not compute the shapes: ${message}`, severity: 'error' });
+            this.addIssue({ source: 'chart', message: msg('problems.scene.shapesFailed', { error: message }), severity: 'error' });
             const last = this.cache ? lastGoodScene.get(this.cache) : undefined;
             if (!last) return [];
             scene = last;

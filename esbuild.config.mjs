@@ -74,6 +74,8 @@ esbuild.build({
 	minify: prod,
 	treeShaking: true,
 	loader: { '.md': 'text' },
+	// Japanese texts as UTF-8, not as \u escapes (half the size).
+	charset: 'utf8',
 	plugins: [lazyNodeModules],
 	outfile: 'main.js',
 }).catch(() => process.exit(1));

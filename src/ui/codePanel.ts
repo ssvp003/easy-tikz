@@ -10,6 +10,7 @@
  * code, so a stale textarea never reaches the clipboard.
  */
 import { PanelHost } from './host';
+import { t } from '../i18n';
 import { BannerHandle, ChipHandle, TextButtonHandle, banner, chip, textButton, uniqueId, visuallyHidden } from './kit';
 
 export interface CodePanelOptions {
@@ -40,7 +41,7 @@ export function createCodePanel(parent: HTMLElement, host: PanelHost, opts: Code
 
     const toolbar = el.createDiv({ cls: 'etz-code-toolbar' });
     const standalone: ChipHandle = chip(toolbar, {
-        label: 'Standalone document',
+        label: t('panels.code.standalone'),
         value: host.settings.isStandalone(),
         onChange: (on) => {
             host.settings.setValue('documentSetup', on);
@@ -49,9 +50,9 @@ export function createCodePanel(parent: HTMLElement, host: PanelHost, opts: Code
             update();
         },
     });
-    toolbar.createDiv({ cls: 'etz-code-hint', text: 'Off: only the tikzpicture, with the packages it needs as comments.' });
+    toolbar.createDiv({ cls: 'etz-code-hint', text: t('panels.code.standaloneHint') });
     const copyBtn = textButton(toolbar, {
-        text: 'Copy',
+        text: t('common.copy'),
         icon: 'copy',
         size: 'sm',
         onClick: () => {
@@ -72,7 +73,7 @@ export function createCodePanel(parent: HTMLElement, host: PanelHost, opts: Code
         cls: 'etz-code-textarea',
         attr: { spellcheck: 'false', autocomplete: 'off', autocapitalize: 'off', wrap: 'off' },
     });
-    const labelEl = visuallyHidden(el, 'TikZ code');
+    const labelEl = visuallyHidden(el, t('panels.code.label'));
     labelEl.id = uniqueId('code');
     textarea.setAttr('aria-labelledby', labelEl.id);
 
@@ -84,7 +85,7 @@ export function createCodePanel(parent: HTMLElement, host: PanelHost, opts: Code
 
     const showError = (e: unknown) => {
         const message = e instanceof Error ? e.message : String(e);
-        errorEl.setText(`Could not generate TikZ: ${message}`);
+        errorEl.setText(t('panels.code.failed', { message }));
         errorEl.removeClass('tikz-hidden');
     };
     const clearError = () => {
@@ -121,13 +122,13 @@ export function createCodePanel(parent: HTMLElement, host: PanelHost, opts: Code
     const showBanner = () => {
         if (bannerHandle) return;
         bannerHandle = banner(bannerSlot, {
-            text: 'Edited by hand. Chart changes are not applied here.',
-            note: 'Insert into note saves the chart settings, not this text.',
+            text: t('panels.code.edited'),
+            note: t('panels.code.editedNote'),
             tone: 'warning',
             actions: [
-                { text: 'Regenerate', cta: true, onClick: () => regenerate() },
+                { text: t('panels.code.regenerate'), cta: true, onClick: () => regenerate() },
                 {
-                    text: 'Keep edits',
+                    text: t('panels.code.keepEdits'),
                     onClick: () => {
                         keptFor = tryGenerate();
                         hideBanner();
